@@ -155,6 +155,8 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
 .badge.overstock { background: rgba(104,211,145,0.12); color: #68d391; border: 1px solid rgba(104,211,145,0.25); }
 .badge.ok { background: rgba(102,126,234,0.12); color: #667eea; border: 1px solid rgba(102,126,234,0.25); }
 .badge.nosales { background: rgba(113,128,150,0.12); color: #718096; border: 1px solid rgba(113,128,150,0.25); }
+.badge.lowactivity { background: rgba(237,137,54,0.12); color: #ed8936; border: 1px solid rgba(237,137,54,0.25); }
+.stat-card.lowactivity .num { color: #ed8936; }
 .badge.newitem { background: rgba(183,148,244,0.12); color: #b794f4; border: 1px solid rgba(183,148,244,0.25); }
 .trend-tag { font-size: 0.69rem; font-weight: 700; color: #f6e05e; }
 .no-trend { color: #2d3748; font-size: 0.69rem; }
@@ -684,7 +686,7 @@ function processWorkbook(wb) {
 
   log('Total: ' + allItems.length + ' items across ' + warehouses.length + ' warehouses');
   actionData   = allItems.filter(function(d){ return ['reorder','outofstock','overstock','newitem'].indexOf(d.status) >= 0; });
-  noactionData = allItems.filter(function(d){ return ['ok','nosales'].indexOf(d.status) >= 0; });
+  noactionData = allItems.filter(function(d){ return ['ok','nosales','lowactivity'].indexOf(d.status) >= 0; });
   setTimeout(function(){
     buildDashboard(currentFileName, currentReviewer, new Date().toISOString());
     if (usingSheets()) saveStockDataToSheets(currentFileName);
@@ -811,7 +813,11 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
 
   var status, action, monthsCover;
   if (avgDemand===0 && projDemand===0) {
+    // Zero sales across all months
     status='nosales'; action='No Sales History'; monthsCover=null;
+  } else if (!hasConsecutiveSales || projDemand===0) {
+    // Some historical sales but no consistent pattern — not enough to act on
+    status='lowactivity'; action='Low Activity'; monthsCover=null;
   } else {
     // Cover always uses the outlier-adjusted demand so one spike month doesn't
     // make stock look artificially healthy (or one dip make it look critical).
@@ -1062,7 +1068,7 @@ function coverBar(months,status){
 }
 
 function badge(status){
-  var map={outofstock:['outofstock','🔴 Out of Stock'],reorder:['reorder','🟠 Reorder'],overstock:['overstock','🟢 Overstock'],ok:['ok','✅ OK'],nosales:['nosales','⚪ No Sales'],newitem:['newitem','🆕 New Item']};
+  var map={outofstock:['outofstock','🔴 Out of Stock'],reorder:['reorder','🟠 Reorder'],overstock:['overstock','🟢 Overstock'],ok:['ok','✅ OK'],nosales:['nosales','⚪ No Sales'],newitem:['newitem','🆕 New Item'],lowactivity:['lowactivity','🟡 Low Activity']};
   var info=map[status]||['ok',status];
   return '<span class="badge '+info[0]+'">'+info[1]+'</span>';
 }
@@ -1243,8 +1249,8 @@ function renderAction() {
 // ═══════════════════════════════════════════
 function renderNoAction() {
   var data=doSort(getNoActionFiltered(),naSort.col,naSort.dir);
-  var ok=0,ns=0;
-  data.forEach(function(d){ if(d.status==='ok') ok++; else if(d.status==='nosales') ns++; });
+  var ok=0,ns=0,la=0;
+  data.forEach(function(d){ if(d.status==='ok') ok++; else if(d.status==='nosales') ns++; else if(d.status==='lowactivity') la++; });
 
   function naStatCard(cls, count, label, filter) {
     var active = naStatus===filter ? ' active-filter' : '';
@@ -1252,9 +1258,10 @@ function renderNoAction() {
       '<div class="num">'+count+'</div><div class="lbl">'+label+'</div></div>';
   }
   document.getElementById('noactionStats').innerHTML =
-    naStatCard('total',   noactionData.length, 'Total',            '') +
-    naStatCard('ok',      ok,  'OK — Healthy Stock', 'ok') +
-    naStatCard('nosales', ns,  'No Sales History',   'nosales');
+    naStatCard('total',       noactionData.length, 'Total',            '') +
+    naStatCard('ok',          ok,  'OK — Healthy Stock', 'ok') +
+    naStatCard('lowactivity', la,  'Low Activity',        'lowactivity') +
+    naStatCard('nosales',     ns,  'No Sales History',    'nosales');
 
   document.getElementById('noactionCount').textContent='Showing '+data.length+' items';
   var tbody=document.getElementById('noactionBody'), empty=document.getElementById('noactionEmpty');
@@ -1387,7 +1394,8 @@ function exportXLSX() {
     { name:'Out of Stock',        filter:function(d){return d.status==='outofstock';} },
     { name:'Low Stock - Reorder', filter:function(d){return d.status==='reorder';} },
     { name:'No Action Required',  filter:function(d){return d.status==='ok';} },
-    { name:'No Sales History',    filter:function(d){return d.status==='nosales';} }
+    { name:'No Sales History',    filter:function(d){return d.status==='nosales';} },
+    { name:'Low Activity',        filter:function(d){return d.status==='lowactivity';} }
   ];
 
   function makeRow(d) {
@@ -1582,7 +1590,7 @@ function loadStockDataFromSheets() {
       });
       allItems.forEach(function(d){ if (warehouses.indexOf(d.warehouse) < 0) warehouses.push(d.warehouse); });
       actionData   = allItems.filter(function(d){ return ['reorder','outofstock','overstock','newitem'].indexOf(d.status) >= 0; });
-      noactionData = allItems.filter(function(d){ return ['ok','nosales'].indexOf(d.status) >= 0; });
+      noactionData = allItems.filter(function(d){ return ['ok','nosales','lowactivity'].indexOf(d.status) >= 0; });
       storageKey   = 'feedback_' + (res.filename || 'shared').replace(/[^a-z0-9]/gi,'_').toLowerCase();
       loadFeedbackFromStorage();
       buildDashboard(res.filename, res.uploadedBy, res.uploadedAt);
