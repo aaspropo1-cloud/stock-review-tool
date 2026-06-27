@@ -158,9 +158,9 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
 .badge.newitem { background: rgba(183,148,244,0.12); color: #b794f4; border: 1px solid rgba(183,148,244,0.25); }
 .trend-tag { font-size: 0.69rem; font-weight: 700; color: #f6e05e; }
 .no-trend { color: #2d3748; font-size: 0.69rem; }
-.cover-bar { display: flex; align-items: center; gap: 6px; }
-.cover-val { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; }
-.bar-bg { flex: 1; height: 4px; background: #2d3748; border-radius: 2px; min-width: 40px; }
+.cover-bar { display: flex; align-items: center; gap: 4px; }
+.cover-val { min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.74rem; }
+.bar-bg { width: 28px; flex-shrink: 0; height: 4px; background: #2d3748; border-radius: 2px; }
 .bar-fill { height: 100%; border-radius: 2px; }
 .empty { text-align: center; padding: 50px 20px; color: #4a5568; font-size: 0.86rem; }
 .tab-content { display: none; }
@@ -354,6 +354,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
     <div class="tab action-tab active" onclick="switchTab('action',this)">🔴 Requires Action <span class="pill" id="actionPill">0</span></div>
     <div class="tab noaction-tab" onclick="switchTab('noaction',this)">✅ No Action Required <span class="pill" id="noactionPill">0</span></div>
     <div class="tab feedback-tab" onclick="switchTab('feedback',this)">💬 Feedback <span class="pill" id="feedbackPill">0</span></div>
+    <div class="tab" onclick="switchTab('transfer',this)">🔄 Transfer <span class="pill" style="background:rgba(99,179,237,0.15);color:#63b3ed" id="transferPill">0</span></div>
   </div>
 
   <!-- EMPTY STATE -->
@@ -459,6 +460,44 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
       <div id="feedbackSummaryBody"></div>
     </div>
   </div>
+  <!-- TRANSFER TAB -->
+  <div class="tab-content" id="tab-transfer">
+    <div class="stats-bar" id="transferStats"></div>
+    <div class="controls">
+      <div class="ctrl-group">
+        <div class="filter-label">From Warehouse</div>
+        <select class="ctrl" id="transferFromWh" onchange="renderTransfer()"><option value="">All Warehouses</option></select>
+      </div>
+      <div class="ctrl-group">
+        <div class="filter-label">To Warehouse</div>
+        <select class="ctrl" id="transferToWh" onchange="renderTransfer()"><option value="">All Warehouses</option></select>
+      </div>
+      <div class="ctrl-group search-wrap">
+        <div class="filter-label">Search</div>
+        <input type="text" class="ctrl" id="transferSearch" placeholder="SKU or description…" oninput="renderTransfer()">
+      </div>
+    </div>
+    <div class="count-info" id="transferCount"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortTransfer('from_warehouse')">From ↕</th>
+          <th onclick="sortTransfer('to_warehouse')">To ↕</th>
+          <th>SKU</th>
+          <th>Description</th>
+          <th onclick="sortTransfer('qty')">Qty to Transfer ↕</th>
+          <th onclick="sortTransfer('from_cover')">From Cover ↕</th>
+          <th onclick="sortTransfer('from_cover_after')">From After ↕</th>
+          <th onclick="sortTransfer('to_cover')">To Cover ↕</th>
+          <th onclick="sortTransfer('to_cover_after')">To After ↕</th>
+          <th class="no-sort">Verdict</th>
+        </tr></thead>
+        <tbody id="transferBody"></tbody>
+      </table>
+      <div class="empty" id="transferEmpty" style="display:none">No transfer opportunities found.</div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -505,6 +544,8 @@ var actionStatus     = '';
 var naStatus         = '';
 var actionSort       = { col: 'status', dir: 1 };
 var naSort           = { col: 'warehouse', dir: 1 };
+var transferSort     = { col: 'qty', dir: -1 };
+var transferData     = []; // computed transfer recommendations
 // feedback: { storageKey: { reviewer, sku, warehouse, pl_code, thumb, reason, action, timestamp } }
 var feedbackMap      = {};
 var storageKey       = '';
@@ -936,7 +977,7 @@ function deleteFeedbackFromSheets(reviewer) {
 // DASHBOARD SETUP
 // ═══════════════════════════════════════════
 function buildDashboard(filename, uploadedBy, uploadedAt) {
-  ['actionWh','noactionWh'].forEach(function(id){
+  ['actionWh','noactionWh','transferFromWh','transferToWh'].forEach(function(id){
     var sel = document.getElementById(id);
     sel.innerHTML = '<option value="">All Warehouses</option>';
     warehouses.forEach(function(wh){
@@ -967,6 +1008,7 @@ function buildDashboard(filename, uploadedBy, uploadedAt) {
   updateFeedbackPill();
   renderAction();
   renderNoAction();
+  computeTransfers();
   if (usingSheets()) loadFeedbackFromSheets(); else renderFeedbackTab();
   showScreen('dashboard');
   showDashboardState('data');
@@ -1018,6 +1060,7 @@ function setNoActionStatusCard(status) {
   renderNoAction();
 }
 function sortAction(col){ actionSort.dir=actionSort.col===col?actionSort.dir*-1:1; actionSort.col=col; renderAction(); }
+function sortTransfer(col){ transferSort.dir=transferSort.col===col?transferSort.dir*-1:1; transferSort.col=col; renderTransfer(); }
 function sortNoAction(col){ naSort.dir=naSort.col===col?naSort.dir*-1:1; naSort.col=col; renderNoAction(); }
 
 // ═══════════════════════════════════════════
@@ -1440,6 +1483,7 @@ function switchTab(tab,el){
   el.classList.add('active');
   document.getElementById('tab-'+tab).classList.add('active');
   if(tab==='feedback') { if(usingSheets()) loadFeedbackFromSheets(); else renderFeedbackTab(); }
+  if(tab==='transfer') renderTransfer();
 }
 
 function showScreen(screen){
@@ -1483,6 +1527,7 @@ function showDashboardState(state) {
   document.getElementById('tab-action').style.display   = hasData ? '' : 'none';
   document.getElementById('tab-noaction').style.display = hasData ? '' : 'none';
   document.getElementById('tab-feedback').style.display = hasData ? '' : 'none';
+  document.getElementById('tab-transfer').style.display = hasData ? '' : 'none';
   document.querySelector('.tab-bar').style.display      = hasData ? '' : 'none';
   document.querySelector('.btn-hdr.export').style.display = hasData ? '' : 'none';
   if (isEmpty) {
@@ -1581,6 +1626,180 @@ function saveStockDataToSheets(filename) {
     console.error('saveStockDataToSheets error:', err);
     setFeedbackStatus('error', err.message);
   });
+}
+
+// ═══════════════════════════════════════════
+// TRANSFER ENGINE
+// ═══════════════════════════════════════════
+function computeTransfers() {
+  transferData = [];
+
+  // Group all items by SKU
+  var bySku = {};
+  allItems.forEach(function(d) {
+    if (!bySku[d.sku]) bySku[d.sku] = [];
+    bySku[d.sku].push(d);
+  });
+
+  Object.keys(bySku).forEach(function(sku) {
+    var items = bySku[sku];
+
+    // Find overstocked sources (cover > OVERSTOCK_MONTHS, has excess stock)
+    var sources = items.filter(function(d) {
+      return d.status === 'overstock' && d.avg_demand > 0 && d.soh > 0;
+    });
+
+    // Find needy destinations (out of stock or reorder)
+    var needs = items.filter(function(d) {
+      return d.status === 'outofstock' || d.status === 'reorder';
+    });
+
+    if (!sources.length || !needs.length) return;
+
+    sources.forEach(function(src) {
+      // Excess = stock above OVERSTOCK_MONTHS cover
+      var demand = src.is_trending ? src.projected_demand : src.avg_demand;
+      if (!demand || demand <= 0) return;
+      var targetStock = Math.ceil(OVERSTOCK_MONTHS * demand);
+      var excess      = Math.max(0, src.soh - targetStock);
+      if (excess <= 0) return;
+
+      // Split excess evenly across all needy warehouses
+      var qtyEach = Math.floor(excess / needs.length);
+      if (qtyEach <= 0) return;
+
+      needs.forEach(function(dst) {
+        var dstDemand = dst.is_trending ? dst.projected_demand : dst.avg_demand;
+        var toCoverBefore = (dstDemand > 0 && dst.soh > 0) ? Math.round((dst.soh / dstDemand) * 10) / 10 : 0;
+        var toCoverAfter  = dstDemand > 0 ? Math.round(((dst.soh + qtyEach) / dstDemand) * 10) / 10 : null;
+        var fromCoverAfter = demand > 0 ? Math.round(((src.soh - qtyEach * needs.length) / demand) * 10) / 10 : null;
+
+        transferData.push({
+          sku:              sku,
+          description:      src.description,
+          from_warehouse:   src.warehouse,
+          to_warehouse:     dst.warehouse,
+          qty:              qtyEach,
+          from_soh:         src.soh,
+          from_cover:       src.months_cover,
+          from_cover_after: fromCoverAfter,
+          to_soh:           dst.soh,
+          to_cover:         toCoverBefore,
+          to_cover_after:   toCoverAfter,
+          to_status:        dst.status
+        });
+      });
+    });
+  });
+
+  document.getElementById('transferPill').textContent = transferData.length;
+  renderTransfer();
+}
+
+function getTransferFiltered() {
+  var fromWh = document.getElementById('transferFromWh').value;
+  var toWh   = document.getElementById('transferToWh').value;
+  var q      = document.getElementById('transferSearch').value.toLowerCase();
+  return transferData.filter(function(d) {
+    if (fromWh && d.from_warehouse !== fromWh) return false;
+    if (toWh   && d.to_warehouse   !== toWh)   return false;
+    if (q && d.sku.toLowerCase().indexOf(q) < 0 && d.description.toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+
+function renderTransfer() {
+  if (!transferData.length) return;
+  var data = doSort(getTransferFiltered(), transferSort.col, transferSort.dir);
+
+  // Stats
+  var totalQty = 0;
+  data.forEach(function(d){ totalQty += d.qty; });
+  document.getElementById('transferStats').innerHTML =
+    '<div class="stat-card total" style="cursor:default"><div class="num">'+data.length+'</div><div class="lbl">Opportunities</div></div>'+
+    '<div class="stat-card oos" style="cursor:default"><div class="num">'+totalQty+'</div><div class="lbl">Units to Move</div></div>';
+
+  document.getElementById('transferCount').textContent = 'Showing ' + data.length + ' transfer recommendations';
+
+  var tbody  = document.getElementById('transferBody');
+  var empty  = document.getElementById('transferEmpty');
+  if (!data.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+
+  buildTransferKeyMap();
+  tbody.innerHTML = data.map(function(d) {
+    var fromWh = d.from_warehouse.replace(/^B\d+T-/,'');
+    var toWh   = d.to_warehouse.replace(/^B\d+T-/,'');
+    var toStatusBadge = d.to_status === 'outofstock'
+      ? '<span class="badge outofstock">🔴 Out of Stock</span>'
+      : '<span class="badge reorder">🟠 Low Stock</span>';
+    var fromAfter = d.from_cover_after !== null ? d.from_cover_after + 'mo' : '—';
+    var toAfter   = d.to_cover_after   !== null ? d.to_cover_after   + 'mo' : '—';
+    var tKey = (d.from_warehouse + d.to_warehouse + d.sku).replace(/[^a-z0-9]/gi,'_');
+    var fb = transferFeedbackMap[tKey] || null;
+    var upActive   = fb && fb.thumb === 'up'   ? ' active' : '';
+    var downActive = fb && fb.thumb === 'down' ? ' active' : '';
+    var savedNote  = fb ? '<span class="fb-saved">✓ saved</span>' : '';
+    return '<tr>' +
+      '<td class="warehouse">'+fromWh+'</td>' +
+      '<td class="warehouse">'+toWh+'</td>' +
+      '<td class="mono" style="font-size:0.72rem">'+d.sku+'</td>' +
+      '<td class="desc" title="'+d.description+'">'+d.description+'</td>' +
+      '<td style="font-weight:700;color:#63b3ed">'+d.qty+'</td>' +
+      '<td style="color:#68d391;font-size:0.74rem">'+(d.from_cover||'—')+'mo</td>' +
+      '<td style="color:#a0aec0;font-size:0.74rem">'+fromAfter+'</td>' +
+      '<td>'+toStatusBadge+'</td>' +
+      '<td style="color:#a0aec0;font-size:0.74rem">'+toAfter+'</td>' +
+      '<td><div class="fb-cell" id="tfbc_'+tKey+'">' +
+        '<button class="fb-thumb up'+upActive+'" onclick="transferThumb(\''+tKey+'\',\'up\')">👍</button>' +
+        '<button class="fb-thumb down'+downActive+'" onclick="transferThumb(\''+tKey+'\',\'down\')">👎</button>' +
+        savedNote +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Transfer Feedback ──
+var transferFeedbackMap = {};
+var transferKeyMap = {};
+
+function buildTransferKeyMap() {
+  transferKeyMap = {};
+  transferData.forEach(function(d) {
+    var k = (d.from_warehouse + d.to_warehouse + d.sku).replace(/[^a-z0-9]/gi,'_');
+    transferKeyMap[k] = d;
+  });
+}
+
+function transferThumb(tKey, thumb) {
+  var d = transferKeyMap[tKey]; if (!d) return;
+  transferFeedbackMap[tKey] = { thumb: thumb, sku: d.sku, from: d.from_warehouse, to: d.to_warehouse, qty: d.qty, timestamp: new Date().toISOString() };
+  var cell = document.getElementById('tfbc_'+tKey);
+  if (cell) {
+    cell.querySelectorAll('.fb-thumb').forEach(function(b){ b.classList.remove('active'); });
+    var btn = cell.querySelector('.fb-thumb.'+thumb); if(btn) btn.classList.add('active');
+    if (!cell.querySelector('.fb-saved')) {
+      var s = document.createElement('span');
+      s.className = 'fb-saved'; s.textContent = '✓ saved';
+      cell.appendChild(s);
+    }
+  }
+  if (usingSheets()) {
+    var entry = transferFeedbackMap[tKey];
+    var url = SCRIPT_URL + '?action=upsert&d=' + encodeURIComponent(JSON.stringify({
+      reviewer:    currentReviewer,
+      warehouse:   entry.from + ' > ' + entry.to,
+      pl_code:     'TRANSFER',
+      sku:         entry.sku,
+      description: 'Transfer ' + entry.qty + ' units',
+      action:      'Transfer: ' + entry.from.replace(/^B\d+T-/,'') + ' > ' + entry.to.replace(/^B\d+T-/,''),
+      status:      'transfer',
+      thumb:       thumb,
+      reason:      thumb === 'up' ? 'Approved transfer' : 'Rejected transfer',
+      timestamp:   entry.timestamp
+    }));
+    fetch(url).catch(function(){});
+  }
 }
 
 // Drag-and-drop on the empty-state upload box
