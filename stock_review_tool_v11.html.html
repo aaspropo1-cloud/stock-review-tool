@@ -781,26 +781,38 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   // This is the raw number the user sees to compare against Projected.
   var avgDemand = mean(fullSales);
 
+  // Cap CURR if it is more than 3x the median of historic non-zero M1-M5 values.
+  // This prevents EOFY spikes and one-off bulk orders from inflating the projection.
+  // Requires at least 2 historic non-zero months to make the comparison meaningful.
+  var adjustedSales = fullSales.slice();
+  if (adjustedSales.length > 1 && adjustedSales[0] > 0) {
+    var historicNonZero = adjustedSales.slice(1).filter(function(v){ return v > 0; });
+    if (historicNonZero.length >= 2) {
+      var historicMedian = medianOf(historicNonZero);
+      if (historicMedian > 0 && adjustedSales[0] > historicMedian * 3) {
+        adjustedSales[0] = historicMedian;
+      }
+    }
+  }
+
   // Projected = IQR-cleaned mean + slope adjustment.
   // removeOutliersIQR gives the inlier-only set for cleanMean (projected base).
   // replaceOutliersIQR substitutes outliers with the inlier mean in-place so that
   // linearSlope() sees a time-ordered series without gaps — preventing a single
   // non-zero CURR on an otherwise-zero series from creating a false upward trend.
-  var cleanSales  = removeOutliersIQR(fullSales);
+  var cleanSales  = removeOutliersIQR(adjustedSales);
   var cleanMean   = mean(cleanSales);
-  var replaced    = replaceOutliersIQR(fullSales);
+  var replaced    = replaceOutliersIQR(adjustedSales);
   var oldestToNew = replaced.slice().reverse();
   var slope       = linearSlope(oldestToNew);
 
   // Require at least 3 months with non-zero sales before flagging as trending.
-  // Sparse/mostly-zero series have too little signal for a reliable trend call.
-  var nonZeroMonths = fullSales.filter(function(v){ return v > 0; }).length;
+  var nonZeroMonths = adjustedSales.filter(function(v){ return v > 0; }).length;
 
   // Require at least 2 consecutive months with sales before projecting demand.
-  // A single isolated sale is noise, not a pattern — projected = 0 in that case.
   var hasConsecutiveSales = false;
-  for (var ci = 0; ci < fullSales.length - 1; ci++) {
-    if (fullSales[ci] > 0 && fullSales[ci+1] > 0) { hasConsecutiveSales = true; break; }
+  for (var ci = 0; ci < adjustedSales.length - 1; ci++) {
+    if (adjustedSales[ci] > 0 && adjustedSales[ci+1] > 0) { hasConsecutiveSales = true; break; }
   }
 
   var isTrending=false, trendLabel=null, projDemand = hasConsecutiveSales ? cleanMean : 0;
