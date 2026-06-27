@@ -794,13 +794,15 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   // Sparse/mostly-zero series have too little signal for a reliable trend call.
   var nonZeroMonths = fullSales.filter(function(v){ return v > 0; }).length;
 
-  // If all recent months (CURR + M1 + M2 + M3) are zero, treat projected as 0.
-  // A single sale in an old month (M4/M5) is historical noise, not a forecast signal.
-  var recentSales = fullSales.slice(0, 4); // CURR, M1, M2, M3
-  var recentAllZero = recentSales.every(function(v){ return v === 0; });
+  // Require at least 2 consecutive months with sales before projecting demand.
+  // A single isolated sale is noise, not a pattern — projected = 0 in that case.
+  var hasConsecutiveSales = false;
+  for (var ci = 0; ci < fullSales.length - 1; ci++) {
+    if (fullSales[ci] > 0 && fullSales[ci+1] > 0) { hasConsecutiveSales = true; break; }
+  }
 
-  var isTrending=false, trendLabel=null, projDemand = recentAllZero ? 0 : cleanMean;
-  if (!recentAllZero && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && nonZeroMonths>=3) {
+  var isTrending=false, trendLabel=null, projDemand = hasConsecutiveSales ? cleanMean : 0;
+  if (hasConsecutiveSales && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && nonZeroMonths>=3) {
     isTrending  = true;
     projDemand  = cleanMean + slope*PROJECTION_PERIODS;
     var pct     = Math.round(((projDemand-cleanMean)/cleanMean)*100);
