@@ -1521,10 +1521,33 @@ function loadStockDataFromSheets() {
         showEmptyForUser();
         return;
       }
-      // Restore data and build dashboard
-      allItems     = res.items;
+      // Recalculate all derived fields in the browser using current logic.
+      // Never trust stored avg_demand, projected_demand, status etc from Sheets —
+      // they may have been written by an older version of the code.
       currentFileName = res.filename || 'Shared data';
-      warehouses   = [];
+      warehouses = [];
+      allItems = res.items.map(function(raw) {
+        var rawSales = [
+          raw.m1 !== null && raw.m1 !== undefined ? Number(raw.m1) : 0,
+          raw.m2 !== null && raw.m2 !== undefined ? Number(raw.m2) : 0,
+          raw.m3 !== null && raw.m3 !== undefined ? Number(raw.m3) : 0,
+          raw.m4 !== null && raw.m4 !== undefined ? Number(raw.m4) : 0,
+          raw.m5 !== null && raw.m5 !== undefined ? Number(raw.m5) : 0
+        ];
+        var currVal = (raw.curr !== null && raw.curr !== undefined && raw.curr !== '') ? Number(raw.curr) : null;
+        var monthsAvailable = (raw.months_available !== null && raw.months_available !== undefined && raw.months_available !== '') ? Number(raw.months_available) : null;
+        var isNewItem = monthsAvailable !== null && monthsAvailable < NEW_ITEM_MONTHS;
+        var effectiveSales = rawSales;
+        if (isNewItem && monthsAvailable !== null) {
+          var validMonths = Math.min(Math.floor(monthsAvailable), 5);
+          effectiveSales = rawSales.slice(0, validMonths);
+        }
+        return classifyItem(
+          raw.warehouse, raw.pl_code, raw.sku, raw.description,
+          Number(raw.soh) || 0,
+          rawSales, effectiveSales, monthsAvailable, isNewItem, currVal
+        );
+      });
       allItems.forEach(function(d){ if (warehouses.indexOf(d.warehouse) < 0) warehouses.push(d.warehouse); });
       actionData   = allItems.filter(function(d){ return ['reorder','outofstock','overstock','newitem'].indexOf(d.status) >= 0; });
       noactionData = allItems.filter(function(d){ return ['ok','nosales'].indexOf(d.status) >= 0; });
