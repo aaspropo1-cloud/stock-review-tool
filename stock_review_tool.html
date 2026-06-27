@@ -1020,7 +1020,7 @@ function getActionFiltered() {
     if (actionStatus==='trending')      { if (!d.is_trending) return false; }
     else if (actionStatus==='trenddown') { if (!d.is_trending_down) return false; }
     else if (actionStatus && d.status!==actionStatus) return false;
-    if (q && (d.pl_code||'').toLowerCase().indexOf(q)<0 && (d.sku||'').toLowerCase().indexOf(q)<0 && (d.description||'').toLowerCase().indexOf(q)<0) return false;
+    if (q && String(d.pl_code||'').toLowerCase().indexOf(q)<0 && String(d.sku||'').toLowerCase().indexOf(q)<0 && String(d.description||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
 }
@@ -1031,7 +1031,7 @@ function getNoActionFiltered() {
   return noactionData.filter(function(d){
     if (wh && d.warehouse!==wh) return false;
     if (naStatus && d.status!==naStatus) return false;
-    if (q && (d.pl_code||'').toLowerCase().indexOf(q)<0 && (d.sku||'').toLowerCase().indexOf(q)<0 && (d.description||'').toLowerCase().indexOf(q)<0) return false;
+    if (q && String(d.pl_code||'').toLowerCase().indexOf(q)<0 && String(d.sku||'').toLowerCase().indexOf(q)<0 && String(d.description||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
 }
@@ -1583,7 +1583,7 @@ function loadStockDataFromSheets() {
           effectiveSales = rawSales.slice(0, validMonths);
         }
         return classifyItem(
-          raw.warehouse, raw.pl_code, raw.sku, raw.description,
+          String(raw.warehouse||''), String(raw.pl_code||''), String(raw.sku||''), String(raw.description||''),
           Number(raw.soh) || 0,
           rawSales, effectiveSales, monthsAvailable, isNewItem, currVal
         );
