@@ -201,6 +201,8 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
 .fb-reason { background: #0f1117; border: 1px solid #2d3748; color: #e2e8f0; padding: 3px 7px; border-radius: 5px; font-size: 0.72rem; outline: none; cursor: pointer; max-width: 160px; }
 .fb-reason:focus { border-color: #667eea; }
 .fb-saved { font-size: 0.68rem; color: #68d391; }
+.fb-other-text { background: #0f1117; border: 1px solid #2d3748; color: #e2e8f0; padding: 3px 7px; border-radius: 5px; font-size: 0.72rem; outline: none; width: 160px; margin-top: 3px; }
+.fb-other-text:focus { border-color: #667eea; }
 
 /* ── Empty State ── */
 .empty-state {
@@ -406,14 +408,12 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
       <table>
         <thead><tr>
           <th onclick="sortAction('warehouse')">Warehouse ↕</th>
-          <th onclick="sortAction('pl_code')">PL Code ↕</th>
           <th onclick="sortAction('sku')">SKU ↕</th>
           <th>Description</th>
-          <th onclick="sortAction('months_available')">Months Avail ↕</th>
           <th onclick="sortAction('soh')">SOH ↕</th>
           <th onclick="sortAction('avg_demand')">Avg Demand ↕</th>
           <th onclick="sortAction('projected_demand')">Projected ↕</th>
-          <th onclick="sortAction('months_cover')">Months Cover ↕</th>
+          <th onclick="sortAction('months_cover')">Mths Cover ↕</th>
           <th onclick="sortAction('trend_label')">Trend ↕</th>
           <th onclick="sortAction('status')">Action ↕</th>
           <th class="no-sort">Feedback</th>
@@ -450,12 +450,11 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
       <table>
         <thead><tr>
           <th onclick="sortNoAction('warehouse')">Warehouse ↕</th>
-          <th onclick="sortNoAction('pl_code')">PL Code ↕</th>
           <th onclick="sortNoAction('sku')">SKU ↕</th>
           <th>Description</th>
           <th onclick="sortNoAction('soh')">SOH ↕</th>
           <th onclick="sortNoAction('avg_demand')">Avg Demand ↕</th>
-          <th onclick="sortNoAction('months_cover')">Months Cover ↕</th>
+          <th onclick="sortNoAction('months_cover')">Mths Cover ↕</th>
           <th onclick="sortNoAction('trend_label')">Trend ↕</th>
           <th onclick="sortNoAction('status')">Status ↕</th>
         </tr></thead>
@@ -1054,14 +1053,19 @@ function feedbackCell(d) {
   var upActive   = fb && fb.thumb==='up'   ? ' active' : '';
   var downActive = fb && fb.thumb==='down' ? ' active' : '';
   var savedNote  = fb ? '<span class="fb-saved">✓ saved</span>' : '';
+  var isOther    = fb && fb.reason === 'Other';
+  var otherText  = fb && fb.otherText ? fb.otherText : '';
   var reasonSel  = fb
     ? '<select class="fb-reason" id="rs_'+key+'" onchange="updateReason(\''+key+'\')">'+reasonOptions(fb.thumb)+'</select>'
     : '<select class="fb-reason" id="rs_'+key+'" style="display:none" onchange="updateReason(\''+key+'\')"><option value="">— select reason —</option></select>';
+  var otherBox   = isOther
+    ? '<br><input type="text" class="fb-other-text" id="ot_'+key+'" placeholder="Describe the issue…" value="'+otherText.replace(/"/g,'&quot;')+'" oninput="updateOtherText(\''+key+'\')">'
+    : '<input type="text" class="fb-other-text" id="ot_'+key+'" placeholder="Describe the issue…" style="display:none" oninput="updateOtherText(\''+key+'\')">';
 
   return '<div class="fb-cell" id="fbc_'+key+'">' +
     '<button class="fb-thumb up'+upActive+'" onclick="thumbClick(\''+key+'\',\'up\')">👍</button>' +
     '<button class="fb-thumb down'+downActive+'" onclick="thumbClick(\''+key+'\',\'down\')">👎</button>' +
-    '<div class="fb-reason-wrap">'+reasonSel+'</div>' +
+    '<div class="fb-reason-wrap">'+reasonSel+otherBox+'</div>' +
     savedNote +
   '</div>';
 }
@@ -1086,6 +1090,9 @@ function thumbClick(key, thumb) {
     cell.querySelectorAll('.fb-thumb').forEach(function(b){ b.classList.remove('active'); });
     var btn = cell.querySelector('.fb-thumb.'+thumb); if(btn) btn.classList.add('active');
   }
+  // Hide other text box when thumb changes
+  var ot = document.getElementById('ot_'+key);
+  if (ot) { ot.style.display = 'none'; ot.value = ''; }
   setFeedback(d, thumb, reasons[0]);
   sel.value = reasons[0];
 }
@@ -1094,7 +1101,23 @@ function updateReason(key) {
   var d = itemKeyMap[key]; if (!d) return;
   var fb = getFeedback(d); if (!fb) return;
   var sel = document.getElementById('rs_'+key);
+  var ot  = document.getElementById('ot_'+key);
+  var isOther = sel.value === 'Other';
+  if (ot) {
+    ot.style.display = isOther ? '' : 'none';
+    if (!isOther) ot.value = '';
+  }
   setFeedback(d, fb.thumb, sel.value);
+}
+
+function updateOtherText(key) {
+  var d = itemKeyMap[key]; if (!d) return;
+  var fb = getFeedback(d); if (!fb) return;
+  var ot = document.getElementById('ot_'+key);
+  if (!ot) return;
+  fb.otherText = ot.value;
+  // Save the other text as the reason
+  setFeedback(d, fb.thumb, ot.value || 'Other');
 }
 
 // ═══════════════════════════════════════════
@@ -1163,16 +1186,13 @@ function renderAction() {
 
   tbody.innerHTML = data.map(function(d){
     var wh   = d.warehouse.replace(/^B\d+T-/,'');
-    var moAv = d.months_available!==null&&d.months_available!==undefined ? d.months_available+'mo' : '—';
     var proj = d.projected_demand > 0 ? (d.is_trending ? '<span style="color:#f6e05e">'+d.projected_demand.toFixed(2)+'</span>' : '<span style="color:#a0aec0">'+d.projected_demand.toFixed(2)+'</span>') : '<span style="color:#4a5568">—</span>';
     var trtag= d.is_trending ? '<span class="trend-tag">📈 '+d.trend_label+'</span>' : '<span class="no-trend">—</span>';
     var avg  = d.avg_demand > 0 ? d.avg_demand.toFixed(2) : '<span style="color:#4a5568">—</span>';
     return '<tr>'+
       '<td class="warehouse">'+wh+'</td>'+
-      '<td class="mono">'+d.pl_code+'</td>'+
       '<td>'+skuTooltip(d)+'</td>'+
       '<td class="desc" title="'+d.description+'">'+d.description+'</td>'+
-      '<td style="color:#b794f4;font-size:0.74rem">'+moAv+'</td>'+
       '<td>'+d.soh+'</td>'+
       '<td>'+avg+'</td>'+
       '<td>'+proj+'</td>'+
@@ -1208,7 +1228,6 @@ function renderNoAction() {
     var trtag=d.is_trending?'<span class="trend-tag">📈 '+d.trend_label+'</span>':'<span class="no-trend">—</span>';
     return '<tr>'+
       '<td class="warehouse">'+wh+'</td>'+
-      '<td class="mono">'+d.pl_code+'</td>'+
       '<td>'+skuTooltip(d)+'</td>'+
       '<td class="desc" title="'+d.description+'">'+d.description+'</td>'+
       '<td>'+d.soh+'</td><td>'+avg+'</td>'+
