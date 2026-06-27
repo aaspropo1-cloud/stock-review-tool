@@ -119,6 +119,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .stat-card.newitem .num { color: #b794f4; }
 .stat-card.total .num { color: #e2e8f0; }
 .stat-card.fbcount .num { color: #f6e05e; }
+.stat-card.trenddown .num { color: #f687b3; }
+.stat-card { cursor: pointer; transition: all 0.15s; }
+.stat-card:hover { border-color: #667eea; transform: translateY(-1px); }
+.stat-card.active-filter { border-color: #667eea; background: #1e2035; }
 
 .controls { background: #1a1d27; border-bottom: 1px solid #2d3748; padding: 10px 24px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .ctrl-group { display: flex; flex-direction: column; gap: 3px; }
@@ -387,17 +391,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
         <div class="filter-label">Warehouse</div>
         <select class="ctrl" id="actionWh" onchange="renderAction()"><option value="">All Warehouses</option></select>
       </div>
-      <div class="ctrl-group">
-        <div class="filter-label">Status</div>
-        <div class="btn-group" id="actionStatusBtns">
-          <button class="fbtn active" onclick="setActionStatus(this,'')">All Issues</button>
-          <button class="fbtn" onclick="setActionStatus(this,'outofstock')">🔴 Out of Stock</button>
-          <button class="fbtn" onclick="setActionStatus(this,'reorder')">🟠 Low Stock</button>
-          <button class="fbtn" onclick="setActionStatus(this,'overstock')">🟢 Overstock</button>
-          <button class="fbtn" onclick="setActionStatus(this,'newitem')">🆕 New Item</button>
-          <button class="fbtn" onclick="setActionStatus(this,'trending')">📈 Trending</button>
-        </div>
-      </div>
+
       <div class="ctrl-group search-wrap">
         <div class="filter-label">Search</div>
         <input type="text" class="ctrl" id="actionSearch" placeholder="PL Code, SKU or description…" oninput="renderAction()">
@@ -432,14 +426,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
         <div class="filter-label">Warehouse</div>
         <select class="ctrl" id="noactionWh" onchange="renderNoAction()"><option value="">All Warehouses</option></select>
       </div>
-      <div class="ctrl-group">
-        <div class="filter-label">Status</div>
-        <div class="btn-group" id="naStatusBtns">
-          <button class="fbtn active" onclick="setNoActionStatus(this,'')">All</button>
-          <button class="fbtn" onclick="setNoActionStatus(this,'ok')">✅ OK</button>
-          <button class="fbtn" onclick="setNoActionStatus(this,'nosales')">⚪ No Sales History</button>
-        </div>
-      </div>
+
       <div class="ctrl-group search-wrap">
         <div class="filter-label">Search</div>
         <input type="text" class="ctrl" id="noactionSearch" placeholder="PL Code, SKU or description…" oninput="renderNoAction()">
@@ -813,6 +800,7 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
     months_cover:monthsCover!==null?Math.round(monthsCover*10)/10:null,
     slope:Math.round(slope*1000)/1000,
     is_trending:isTrending, trend_label:trendLabel,
+    is_trending_down: !isTrending && cleanMean>0 && slope < -cleanMean*TREND_SLOPE_PCT && nonZeroMonths>=3,
     action:action, status:status, months_available:monthsAvailable,
     curr:currVal,
     m1:rawSales[0],m2:rawSales[1],m3:rawSales[2],m4:rawSales[3],m5:rawSales[4]
@@ -972,8 +960,7 @@ function buildDashboard(filename, uploadedBy, uploadedAt) {
 
   actionStatus=''; naStatus='';
   actionSort={col:'status',dir:1}; naSort={col:'warehouse',dir:1};
-  document.querySelectorAll('#actionStatusBtns .fbtn').forEach(function(b,i){b.classList.toggle('active',i===0);});
-  document.querySelectorAll('#naStatusBtns .fbtn').forEach(function(b,i){b.classList.toggle('active',i===0);});
+  actionStatus=''; naStatus='';
   document.getElementById('actionSearch').value='';
   document.getElementById('noactionSearch').value='';
 
@@ -993,7 +980,8 @@ function getActionFiltered() {
   var q=document.getElementById('actionSearch').value.toLowerCase();
   return actionData.filter(function(d){
     if (wh && d.warehouse!==wh) return false;
-    if (actionStatus==='trending') { if (!d.is_trending) return false; }
+    if (actionStatus==='trending')      { if (!d.is_trending) return false; }
+    else if (actionStatus==='trenddown') { if (!d.is_trending_down) return false; }
     else if (actionStatus && d.status!==actionStatus) return false;
     if (q && d.pl_code.toLowerCase().indexOf(q)<0 && d.sku.toLowerCase().indexOf(q)<0 && d.description.toLowerCase().indexOf(q)<0) return false;
     return true;
@@ -1021,8 +1009,14 @@ function doSort(data,col,dir){
   });
 }
 
-function setActionStatus(btn,status){ actionStatus=status; document.querySelectorAll('#actionStatusBtns .fbtn').forEach(function(b){b.classList.remove('active');}); btn.classList.add('active'); renderAction(); }
-function setNoActionStatus(btn,status){ naStatus=status; document.querySelectorAll('#naStatusBtns .fbtn').forEach(function(b){b.classList.remove('active');}); btn.classList.add('active'); renderNoAction(); }
+function setActionStatusCard(status) {
+  actionStatus = (actionStatus === status && status !== '') ? '' : status;
+  renderAction();
+}
+function setNoActionStatusCard(status) {
+  naStatus = (naStatus === status && status !== '') ? '' : status;
+  renderNoAction();
+}
 function sortAction(col){ actionSort.dir=actionSort.col===col?actionSort.dir*-1:1; actionSort.col=col; renderAction(); }
 function sortNoAction(col){ naSort.dir=naSort.col===col?naSort.dir*-1:1; naSort.col=col; renderNoAction(); }
 
@@ -1162,22 +1156,30 @@ function skuTooltip(d) {
 function renderAction() {
   buildItemKeyMap();
   var data = doSort(getActionFiltered(), actionSort.col, actionSort.dir);
-  var oos=0,ro=0,ov=0,tr=0,ni=0;
-  data.forEach(function(d){
+  var oos=0,ro=0,ov=0,tr=0,td=0,ni=0;
+  // Count from ALL action data for stats bar (not just filtered)
+  actionData.forEach(function(d){
     if(d.status==='outofstock') oos++;
     else if(d.status==='reorder') ro++;
     else if(d.status==='overstock') ov++;
     if(d.is_trending) tr++;
+    if(d.is_trending_down) td++;
     if(d.status==='newitem') ni++;
   });
 
+  function statCard(cls, count, label, filter) {
+    var active = actionStatus===filter ? ' active-filter' : '';
+    return '<div class="stat-card '+cls+active+'" onclick="setActionStatusCard(\''+filter+'\')">' +
+      '<div class="num">'+count+'</div><div class="lbl">'+label+'</div></div>';
+  }
   document.getElementById('actionStats').innerHTML =
-    '<div class="stat-card total"><div class="num">'+data.length+'</div><div class="lbl">Action Items</div></div>'+
-    '<div class="stat-card oos"><div class="num">'+oos+'</div><div class="lbl">Out of Stock</div></div>'+
-    '<div class="stat-card reorder"><div class="num">'+ro+'</div><div class="lbl">Low Stock</div></div>'+
-    '<div class="stat-card overstock"><div class="num">'+ov+'</div><div class="lbl">Overstock</div></div>'+
-    '<div class="stat-card trending"><div class="num">'+tr+'</div><div class="lbl">Trending Up</div></div>'+
-    '<div class="stat-card newitem"><div class="num">'+ni+'</div><div class="lbl">New Items</div></div>';
+    statCard('total', actionData.length, 'All Items', '') +
+    statCard('oos',   oos, 'Out of Stock',  'outofstock') +
+    statCard('reorder', ro, 'Low Stock',    'reorder') +
+    statCard('overstock', ov, 'Overstock',  'overstock') +
+    statCard('trending', tr, 'Trending Up', 'trending') +
+    statCard('trenddown', td, 'Trending Down', 'trenddown') +
+    statCard('newitem', ni, 'New Items',    'newitem');
 
   document.getElementById('actionCount').textContent = 'Showing '+data.length+' items';
   var tbody=document.getElementById('actionBody'), empty=document.getElementById('actionEmpty');
@@ -1187,7 +1189,7 @@ function renderAction() {
   tbody.innerHTML = data.map(function(d){
     var wh   = d.warehouse.replace(/^B\d+T-/,'');
     var proj = d.projected_demand > 0 ? (d.is_trending ? '<span style="color:#f6e05e">'+d.projected_demand.toFixed(2)+'</span>' : '<span style="color:#a0aec0">'+d.projected_demand.toFixed(2)+'</span>') : '<span style="color:#4a5568">—</span>';
-    var trtag= d.is_trending ? '<span class="trend-tag">📈 '+d.trend_label+'</span>' : '<span class="no-trend">—</span>';
+    var trtag= d.is_trending ? '<span class="trend-tag">📈 '+d.trend_label+'</span>' : d.is_trending_down ? '<span style="color:#f687b3;font-size:0.69rem;font-weight:700">📉</span>' : '<span class="no-trend">—</span>';
     var avg  = d.avg_demand > 0 ? d.avg_demand.toFixed(2) : '<span style="color:#4a5568">—</span>';
     return '<tr>'+
       '<td class="warehouse">'+wh+'</td>'+
@@ -1212,10 +1214,15 @@ function renderNoAction() {
   var ok=0,ns=0;
   data.forEach(function(d){ if(d.status==='ok') ok++; else if(d.status==='nosales') ns++; });
 
+  function naStatCard(cls, count, label, filter) {
+    var active = naStatus===filter ? ' active-filter' : '';
+    return '<div class="stat-card '+cls+active+'" onclick="setNoActionStatusCard(\''+filter+'\')">' +
+      '<div class="num">'+count+'</div><div class="lbl">'+label+'</div></div>';
+  }
   document.getElementById('noactionStats').innerHTML =
-    '<div class="stat-card total"><div class="num">'+data.length+'</div><div class="lbl">Total</div></div>'+
-    '<div class="stat-card ok"><div class="num">'+ok+'</div><div class="lbl">OK — Healthy Stock</div></div>'+
-    '<div class="stat-card nosales"><div class="num">'+ns+'</div><div class="lbl">No Sales History</div></div>';
+    naStatCard('total',   noactionData.length, 'Total',            '') +
+    naStatCard('ok',      ok,  'OK — Healthy Stock', 'ok') +
+    naStatCard('nosales', ns,  'No Sales History',   'nosales');
 
   document.getElementById('noactionCount').textContent='Showing '+data.length+' items';
   var tbody=document.getElementById('noactionBody'), empty=document.getElementById('noactionEmpty');
