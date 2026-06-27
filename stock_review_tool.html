@@ -1511,48 +1511,38 @@ function loadStockDataFromSheets() {
 }
 
 function saveStockDataToSheets(filename) {
-  setFeedbackStatus('saving');
-  var CHUNK = 30; // small chunks to stay within URL length limits
+  // Use POST with chunks of 200 items — POST handles large payloads fine from GitHub Pages
+  setFeedbackStatus('Saving data to Sheets...');
+  var CHUNK = 200;
   var chunks = [];
   for (var i = 0; i < allItems.length; i += CHUNK) {
     chunks.push(allItems.slice(i, i + CHUNK));
   }
   var total = chunks.length;
   console.log('saveStockDataToSheets: ' + allItems.length + ' items in ' + total + ' chunks');
-  setFeedbackStatus('saving', 'Saving chunk 1 of ' + total + '...');
 
   function saveChunk(idx) {
-    var isFirst = idx === 0;
-    // Only send essential fields to minimise URL size
-    var slimItems = chunks[idx].map(function(d){
-      return {
-        warehouse:d.warehouse, pl_code:d.pl_code, sku:d.sku, description:d.description,
-        soh:d.soh, avg_demand:d.avg_demand, projected_demand:d.projected_demand,
-        months_cover:d.months_cover, slope:d.slope, is_trending:d.is_trending,
-        trend_label:d.trend_label, action:d.action, status:d.status,
-        months_available:d.months_available, curr:d.curr,
-        m1:d.m1, m2:d.m2, m3:d.m3, m4:d.m4, m5:d.m5
-      };
-    });
     var payload = {
-      items:      slimItems,
-      filename:   filename,
-      uploadedBy: currentReviewer,
-      uploadedAt: new Date().toISOString(),
-      chunkIndex: idx,
+      action:      idx === 0 ? 'saveStockData' : 'appendStockData',
+      items:       chunks[idx],
+      filename:    filename,
+      uploadedBy:  currentReviewer,
+      uploadedAt:  new Date().toISOString(),
+      chunkIndex:  idx,
       totalChunks: total
     };
-    var action = isFirst ? 'saveStockData' : 'appendStockData';
-    var encoded = encodeURIComponent(JSON.stringify(payload));
-    console.log('Chunk ' + idx + ' URL length: ' + (SCRIPT_URL.length + action.length + encoded.length + 20));
-    return fetch(SCRIPT_URL + '?action=' + action + '&d=' + encoded)
+    return fetch(SCRIPT_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body:    JSON.stringify(payload)
+    })
       .then(function(r){ return r.text(); })
       .then(function(text){
         var res; try { res = JSON.parse(text); } catch(e){ throw new Error('Bad JSON: ' + text.substring(0,120)); }
         if (res.error) throw new Error(res.error);
-        console.log('Chunk ' + idx + ' saved ok:', res);
+        console.log('Chunk ' + idx + ' saved:', res);
         if (idx + 1 < total) {
-          setFeedbackStatus('saving', 'Saving chunk ' + (idx+2) + ' of ' + total + '...');
+          setFeedbackStatus('Saving ' + (idx+2) + ' of ' + total + '...');
           return saveChunk(idx + 1);
         } else {
           setFeedbackStatus('saved');
