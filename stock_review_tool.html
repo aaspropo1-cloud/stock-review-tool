@@ -176,6 +176,28 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
   padding: 12px 14px; min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   pointer-events: none;
 }
+.transfer-sku-tooltip {
+  display: none; position: absolute; z-index: 100;
+  bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #1a1d27; border: 1px solid #2d3748; border-radius: 10px;
+  padding: 14px 16px; min-width: 480px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.transfer-sku-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #2d3748;
+}
+.tt-wh-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #2d3748; }
+.transfer-group-header { background: #1a1d27; }
+.transfer-group-header td { padding: 10px 10px 8px; border-bottom: 1px solid #2d3748; border-top: 2px solid #2d3748; }
+.transfer-group-title { font-size: 0.82rem; font-weight: 700; color: #63b3ed; }
+.transfer-group-meta { font-size: 0.7rem; color: #718096; margin-top: 2px; }
+.tt-wh-label.from { color: #68d391; }
+.tt-wh-label.to   { color: #fc8181; }
+.tt-soh-row { font-size: 0.72rem; color: #a0aec0; margin-bottom: 8px; }
+.tt-soh-row strong { color: #e2e8f0; }
+.tt-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
 .sku-tooltip::after {
   content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
   border: 6px solid transparent; border-top-color: #2d3748;
@@ -476,13 +498,17 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
         <div class="filter-label">Search</div>
         <input type="text" class="ctrl" id="transferSearch" placeholder="SKU or description…" oninput="renderTransfer()">
       </div>
+      <div class="ctrl-group" style="justify-content:flex-end">
+        <div class="filter-label">View</div>
+        <button class="fbtn active" id="transferGroupBtn" onclick="toggleTransferGroup()">📦 Group by Route</button>
+      </div>
     </div>
     <div class="count-info" id="transferCount"></div>
     <div class="table-wrap">
       <table>
-        <thead><tr>
-          <th onclick="sortTransfer('from_warehouse')">From ↕</th>
-          <th onclick="sortTransfer('to_warehouse')">To ↕</th>
+        <thead><tr id="transferthead">
+          <th onclick="sortTransfer('from_warehouse')" id="th-transfer-from">From ↕</th>
+          <th onclick="sortTransfer('to_warehouse')" id="th-transfer-to">To ↕</th>
           <th>SKU</th>
           <th>Description</th>
           <th onclick="sortTransfer('qty')">Qty to Transfer ↕</th>
@@ -546,6 +572,7 @@ var actionSort       = { col: 'status', dir: 1 };
 var naSort           = { col: 'warehouse', dir: 1 };
 var transferSort     = { col: 'qty', dir: -1 };
 var transferData     = []; // computed transfer recommendations
+var transferGrouped  = true;
 // feedback: { storageKey: { reviewer, sku, warehouse, pl_code, thumb, reason, action, timestamp } }
 var feedbackMap      = {};
 var storageKey       = '';
@@ -1193,6 +1220,47 @@ function skuTooltip(d) {
   return html2;
 }
 
+function transferSkuTooltip(sku, src, dst) {
+  function miniChart(d, cls) {
+    var labels = ["CURR","M-1","M-2","M-3","M-4","M-5"];
+    var clses  = ["tt-curr","tt-m1","tt-m2","tt-m3","tt-m4","tt-m5"];
+    var vals   = [
+      (d.curr !== null && d.curr !== undefined) ? d.curr : "-",
+      d.m1 !== undefined ? d.m1 : "-",
+      d.m2 !== undefined ? d.m2 : "-",
+      d.m3 !== undefined ? d.m3 : "-",
+      d.m4 !== undefined ? d.m4 : "-",
+      d.m5 !== undefined ? d.m5 : "-"
+    ];
+    var nums   = vals.map(function(v){ return typeof v === "number" ? v : 0; });
+    var maxVal = Math.max.apply(null, nums) || 1;
+    var bars = "";
+    for (var i = 0; i < 6; i++) {
+      var isNum = typeof vals[i] === "number";
+      var pct   = isNum ? Math.round((vals[i] / maxVal) * 32) : 2;
+      var disp  = isNum ? vals[i] : "-";
+      bars += '<div class="tt-col ' + clses[i] + '">';
+      bars += '<div class="tt-label">' + labels[i] + '</div>';
+      bars += '<div class="tt-bar-wrap"><div class="tt-bar" style="height:' + pct + 'px"></div></div>';
+      bars += '<div class="tt-val">' + disp + '</div>';
+      bars += '</div>';
+    }
+    return '<div class="tt-wh-label ' + cls + '">' + d.warehouse.replace(/^B\d+T-/,'') + '</div>' +
+           '<div class="tt-soh-row">SOH: <strong>' + d.soh + '</strong> &nbsp; Cover: <strong>' + (d.months_cover !== null ? d.months_cover + 'mo' : '—') + '</strong></div>' +
+           '<div class="tt-grid">' + bars + '</div>';
+  }
+
+  var html = '<div class="sku-wrap">';
+  html += '<span style="font-family:monospace;font-size:0.74rem;color:#a0aec0;cursor:default">' + sku + '</span>';
+  html += '<div class="transfer-sku-tooltip">';
+  html += '<div style="font-size:0.7rem;color:#718096;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Sales History: ' + sku + '</div>';
+  html += '<div class="tt-two-col">';
+  html += '<div>' + miniChart(src, 'from') + '</div>';
+  html += '<div>' + miniChart(dst, 'to') + '</div>';
+  html += '</div></div></div>';
+  return html;
+}
+
 // ═══════════════════════════════════════════
 // RENDER ACTION TAB
 // ═══════════════════════════════════════════
@@ -1708,6 +1776,13 @@ function getTransferFiltered() {
   });
 }
 
+function toggleTransferGroup() {
+  transferGrouped = !transferGrouped;
+  var btn = document.getElementById('transferGroupBtn');
+  if (btn) btn.classList.toggle('active', transferGrouped);
+  renderTransfer();
+}
+
 function renderTransfer() {
   if (!transferData.length) return;
   var data = doSort(getTransferFiltered(), transferSort.col, transferSort.dir);
@@ -1727,36 +1802,82 @@ function renderTransfer() {
   empty.style.display = 'none';
 
   buildTransferKeyMap();
-  tbody.innerHTML = data.map(function(d) {
+
+  var skuByWarehouse = {};
+  allItems.forEach(function(item) {
+    var k = item.warehouse + '||' + item.sku;
+    skuByWarehouse[k] = item;
+  });
+
+  function makeTransferRow(d) {
     var fromWh = d.from_warehouse.replace(/^B\d+T-/,'');
     var toWh   = d.to_warehouse.replace(/^B\d+T-/,'');
     var toStatusBadge = d.to_status === 'outofstock'
-      ? '<span class="badge outofstock">🔴 Out of Stock</span>'
-      : '<span class="badge reorder">🟠 Low Stock</span>';
-    var fromAfter = d.from_cover_after !== null ? d.from_cover_after + 'mo' : '—';
-    var toAfter   = d.to_cover_after   !== null ? d.to_cover_after   + 'mo' : '—';
+      ? '<span class="badge outofstock">\U0001f534 Out of Stock</span>'
+      : '<span class="badge reorder">\U0001f7e0 Low Stock</span>';
+    var fromAfter = d.from_cover_after !== null ? d.from_cover_after + 'mo' : '\u2014';
+    var toAfter   = d.to_cover_after   !== null ? d.to_cover_after   + 'mo' : '\u2014';
     var tKey = (d.from_warehouse + d.to_warehouse + d.sku).replace(/[^a-z0-9]/gi,'_');
     var fb = transferFeedbackMap[tKey] || null;
     var upActive   = fb && fb.thumb === 'up'   ? ' active' : '';
     var downActive = fb && fb.thumb === 'down' ? ' active' : '';
-    var savedNote  = fb ? '<span class="fb-saved">✓ saved</span>' : '';
+    var savedNote  = fb ? '<span class="fb-saved">\u2713 saved</span>' : '';
+    var skuCell = (function(){
+      var srcItem = skuByWarehouse[d.from_warehouse+'||'+d.sku];
+      var dstItem = skuByWarehouse[d.to_warehouse+'||'+d.sku];
+      if (srcItem && dstItem) return '<td>' + transferSkuTooltip(d.sku, srcItem, dstItem) + '</td>';
+      return '<td class="mono" style="font-size:0.72rem">'+d.sku+'</td>';
+    })();
+    var fromToCell = transferGrouped ? '' :
+      '<td class="warehouse">'+fromWh+'</td><td class="warehouse">'+toWh+'</td>';
     return '<tr>' +
-      '<td class="warehouse">'+fromWh+'</td>' +
-      '<td class="warehouse">'+toWh+'</td>' +
-      '<td class="mono" style="font-size:0.72rem">'+d.sku+'</td>' +
+      fromToCell +
+      skuCell +
       '<td class="desc" title="'+d.description+'">'+d.description+'</td>' +
       '<td style="font-weight:700;color:#63b3ed">'+d.qty+'</td>' +
-      '<td style="color:#68d391;font-size:0.74rem">'+(d.from_cover||'—')+'mo</td>' +
+      '<td style="color:#68d391;font-size:0.74rem">'+(d.from_cover||'\u2014')+'mo</td>' +
       '<td style="color:#a0aec0;font-size:0.74rem">'+fromAfter+'</td>' +
       '<td>'+toStatusBadge+'</td>' +
       '<td style="color:#a0aec0;font-size:0.74rem">'+toAfter+'</td>' +
       '<td><div class="fb-cell" id="tfbc_'+tKey+'">' +
-        '<button class="fb-thumb up'+upActive+'" onclick="transferThumb(\''+tKey+'\',\'up\')">👍</button>' +
-        '<button class="fb-thumb down'+downActive+'" onclick="transferThumb(\''+tKey+'\',\'down\')">👎</button>' +
+        '<button class="fb-thumb up'+upActive+'" onclick="transferThumb(\''+tKey+'\',\'up\')">\U0001f44d</button>' +
+        '<button class="fb-thumb down'+downActive+'" onclick="transferThumb(\''+tKey+'\',\'down\')">\U0001f44e</button>' +
         savedNote +
       '</div></td>' +
     '</tr>';
-  }).join('');
+  }
+
+  var html = '';
+  if (transferGrouped) {
+    var routes = {};
+    var routeOrder = [];
+    data.forEach(function(d) {
+      var routeKey = d.from_warehouse + '|||' + d.to_warehouse;
+      if (!routes[routeKey]) { routes[routeKey] = []; routeOrder.push(routeKey); }
+      routes[routeKey].push(d);
+    });
+    routeOrder.forEach(function(routeKey) {
+      var items = routes[routeKey];
+      var parts = routeKey.split('|||');
+      var fromLabel = parts[0].replace(/^B\d+T-/,'');
+      var toLabel   = parts[1].replace(/^B\d+T-/,'');
+      var routeQty  = items.reduce(function(s,d){ return s+d.qty; }, 0);
+      html += '<tr class="transfer-group-header"><td colspan="8">' +
+        '<div class="transfer-group-title">\U0001f4e6 ' + fromLabel + ' \u2192 ' + toLabel + '</div>' +
+        '<div class="transfer-group-meta">' + items.length + ' SKU' + (items.length!==1?'s':'') + ' \u00b7 ' + routeQty + ' units to move</div>' +
+        '</td></tr>';
+      items.forEach(function(d){ html += makeTransferRow(d); });
+    });
+  } else {
+    data.forEach(function(d){ html += makeTransferRow(d); });
+  }
+
+  tbody.innerHTML = html;
+
+  var thFrom = document.getElementById('th-transfer-from');
+  var thTo   = document.getElementById('th-transfer-to');
+  if (thFrom) thFrom.style.display = transferGrouped ? 'none' : '';
+  if (thTo)   thTo.style.display   = transferGrouped ? 'none' : '';
 }
 
 // ── Transfer Feedback ──
