@@ -490,12 +490,16 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
 
   <!-- PL CONFIG TAB (admins only) -->
   <div class="tab-content" id="tab-plconfig">
-    <div style="padding:20px 24px">
+    <!-- Sub-tabs -->
+    <div style="display:flex;background:#1a1d27;border-bottom:1px solid #2d3748;padding:0 24px">
+      <div class="tab active" id="subtab-pl" onclick="switchConfigSubTab('pl')" style="font-size:0.78rem">📋 PL Code</div>
+      <div class="tab" id="subtab-sku" onclick="switchConfigSubTab('sku')" style="font-size:0.78rem">🔧 SKU Overrides</div>
+    </div>
 
-      <!-- PL Code section -->
-      <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">⚙ Stock Configuration</h2>
+    <!-- PL Code sub-tab -->
+    <div id="subcontent-pl" style="padding:20px 24px">
+      <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">⚙ PL Code Configuration</h2>
       <p style="font-size:0.8rem;color:#718096;margin-bottom:16px">Set lead time and safety stock per PL Code. SKU overrides take priority. Reorder threshold = lead time + safety stock (default 8 weeks).</p>
-
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
         <div class="ctrl-group search-wrap">
           <div class="filter-label">Search PL Code</div>
@@ -504,7 +508,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
         <button class="btn-hdr export" onclick="savePLConfig()">💾 Save PL Config</button>
         <span id="plconfigSaveStatus" style="font-size:0.72rem;color:#68d391"></span>
       </div>
-      <div class="table-wrap" style="padding:0;margin-bottom:40px">
+      <div class="table-wrap" style="padding:0">
         <table>
           <thead><tr>
             <th>PL Code</th>
@@ -516,37 +520,36 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
           <tbody id="plconfigBody"></tbody>
         </table>
       </div>
+    </div>
 
-      <!-- SKU Override section -->
-      <div style="border-top:1px solid #2d3748;padding-top:28px;margin-top:8px">
-        <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">🔧 SKU Overrides</h2>
-        <p style="font-size:0.8rem;color:#718096;margin-bottom:16px">Override settings for specific SKUs — use when there is a shortage or special situation. SKU settings take priority over PL Code settings.</p>
-        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
-          <div class="ctrl-group search-wrap">
-            <div class="filter-label">Search SKU</div>
-            <input type="text" class="ctrl" id="skuconfigSearch" placeholder="Search SKU…" oninput="renderSKUConfig()">
-          </div>
-          <button class="btn-hdr" onclick="addSKUOverride()" style="border-color:#667eea;color:#667eea">+ Add SKU Override</button>
-          <button class="btn-hdr export" onclick="saveSKUConfig()">💾 Save SKU Overrides</button>
-          <span id="skuconfigSaveStatus" style="font-size:0.72rem;color:#68d391"></span>
+    <!-- SKU Override sub-tab -->
+    <div id="subcontent-sku" style="padding:20px 24px;display:none">
+      <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">🔧 SKU Overrides</h2>
+      <p style="font-size:0.8rem;color:#718096;margin-bottom:16px">Override settings for specific SKUs — use when there is a shortage or special situation. SKU settings take priority over PL Code settings.</p>
+      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
+        <div class="ctrl-group search-wrap">
+          <div class="filter-label">Search SKU</div>
+          <input type="text" class="ctrl" id="skuconfigSearch" placeholder="Search SKU…" oninput="renderSKUConfig()">
         </div>
-        <div class="table-wrap" style="padding:0">
-          <table>
-            <thead><tr>
-              <th>SKU</th>
-              <th>Lead Time (weeks)</th>
-              <th>Safety Stock (weeks)</th>
-              <th>Total Threshold</th>
-              <th>Months Cover Trigger</th>
-              <th>Reason</th>
-              <th class="no-sort">Remove</th>
-            </tr></thead>
-            <tbody id="skuconfigBody"></tbody>
-          </table>
-          <div class="empty" id="skuconfigEmpty" style="display:none">No SKU overrides set. Click "+ Add SKU Override" to add one.</div>
-        </div>
+        <button class="btn-hdr" onclick="addSKUOverride()" style="border-color:#667eea;color:#667eea">+ Add SKU Override</button>
+        <button class="btn-hdr export" onclick="saveSKUConfig()">💾 Save SKU Overrides</button>
+        <span id="skuconfigSaveStatus" style="font-size:0.72rem;color:#68d391"></span>
       </div>
-
+      <div class="table-wrap" style="padding:0">
+        <table>
+          <thead><tr>
+            <th>SKU</th>
+            <th>Lead Time (weeks)</th>
+            <th>Safety Stock (weeks)</th>
+            <th>Total Threshold</th>
+            <th>Months Cover Trigger</th>
+            <th>Reason</th>
+            <th class="no-sort">Remove</th>
+          </tr></thead>
+          <tbody id="skuconfigBody"></tbody>
+        </table>
+        <div class="empty" id="skuconfigEmpty" style="display:none">No SKU overrides set. Click "+ Add SKU Override" to add one.</div>
+      </div>
     </div>
   </div>
 
@@ -1959,6 +1962,14 @@ function savePLConfig() {
     setTimeout(function(){ el.textContent = ''; }, 3000);
     renderPLConfig();
   }
+}
+
+function switchConfigSubTab(tab) {
+  document.getElementById('subcontent-pl').style.display  = tab==='pl'  ? '' : 'none';
+  document.getElementById('subcontent-sku').style.display = tab==='sku' ? '' : 'none';
+  document.getElementById('subtab-pl').classList.toggle('active',  tab==='pl');
+  document.getElementById('subtab-sku').classList.toggle('active', tab==='sku');
+  if (tab==='sku') renderSKUConfig();
 }
 
 function addSKUOverride() {
