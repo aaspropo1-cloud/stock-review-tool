@@ -9,6 +9,25 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
 
+/* ── Date Picker Modal ── */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000;
+  background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: #1a1d27; border: 1px solid #2d3748; border-radius: 14px;
+  padding: 32px 36px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 20px;
+}
+.modal-box h2 { font-size: 1rem; font-weight: 700; color: #f7fafc; }
+.modal-box p { font-size: 0.82rem; color: #718096; line-height: 1.5; }
+.modal-box label { font-size: 0.75rem; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px; }
+.modal-box input[type=date] { width: 100%; background: #0f1117; border: 1px solid #2d3748; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; outline: none; }
+.modal-box input[type=date]:focus { border-color: #667eea; }
+.modal-actions { display: flex; gap: 10px; }
+.modal-actions .btn-primary { flex: 1; }
+.btn-secondary { flex: 1; padding: 11px 24px; background: transparent; color: #a0aec0; border: 1px solid #2d3748; border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+.btn-secondary:hover { border-color: #667eea; color: #667eea; }
+
 /* ── Password Screen ── */
 .password-screen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -339,7 +358,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
     <div class="logo">📦</div>
     <div>
       <div class="header-title">Stock Review Dashboard</div>
-      <div class="header-sub">IQR outlier-adjusted (incl. CURR) · Flat reorder &lt;2mo · Trending &lt;3mo · Overstock &gt;5mo</div>
+      <div class="header-sub">IQR outlier-adjusted · CURR extrapolated to full month · Flat reorder &lt;2mo · Trending &lt;3mo · Overstock &gt;5mo</div>
     </div>
     <div class="header-right">
       <span class="reviewer-chip">👤 <span id="headerReviewer"></span></span>
@@ -461,6 +480,24 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
       <div id="feedbackSummaryBody"></div>
     </div>
   </div>
+<!-- DATE PICKER MODAL -->
+<div id="dateModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div>
+      <h2>📅 Confirm Data Date</h2>
+      <p>What is the current date for this data? This is used to calculate how far through the month CURR sales are, so the projection is accurate.</p>
+    </div>
+    <div>
+      <label for="dataDateInput">Current Date</label>
+      <input type="date" id="dataDateInput">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="confirmDataDate(true)">Use Today</button>
+      <button class="btn-primary" onclick="confirmDataDate(false)">Confirm Date</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -512,6 +549,8 @@ var naSort           = { col: 'warehouse', dir: 1 };
 // feedback: { storageKey: { reviewer, sku, warehouse, pl_code, thumb, reason, action, timestamp } }
 var feedbackMap      = {};
 var storageKey       = '';
+var dataDate         = null; // date selected by user when uploading
+var currMonthFraction = 1.0; // how far through the current month (0-1)
 var SCRIPT_URL       = 'https://script.google.com/macros/s/AKfycbz5Eie4P1GkqkbYiIsHVqCpnf2_Q2dLCotuSKxLlL_05Y6WWMeaZWnVNnoxkwa0TsOyjA/exec';
 var ADMIN_USERS      = ['Chris', 'Nancy', 'Dominik'];
 
@@ -570,15 +609,43 @@ dz.addEventListener('drop', function(e){
 // ═══════════════════════════════════════════
 // FILE HANDLING
 // ═══════════════════════════════════════════
+var pendingFile = null;
+
 function handleFile(file) {
   if (!file) return;
   if (!file.name.match(/\.xlsx?$/i)) { showUploadError('Please upload an Excel file (.xlsx or .xls)'); return; }
+  pendingFile = file;
+  // Show date picker modal before processing
+  var today = new Date();
+  var yyyy = today.getFullYear();
+  var mm = String(today.getMonth()+1).padStart(2,'0');
+  var dd = String(today.getDate()).padStart(2,'0');
+  document.getElementById('dataDateInput').value = yyyy+'-'+mm+'-'+dd;
+  document.getElementById('dateModal').style.display = 'flex';
+}
+
+function confirmDataDate(useToday) {
+  var dateVal = useToday
+    ? new Date()
+    : new Date(document.getElementById('dataDateInput').value + 'T12:00:00');
+  if (isNaN(dateVal)) { dateVal = new Date(); }
+  dataDate = dateVal;
+
+  // Calculate how far through the month we are (1 = full month)
+  var day = dataDate.getDate();
+  var daysInMonth = new Date(dataDate.getFullYear(), dataDate.getMonth()+1, 0).getDate();
+  currMonthFraction = Math.min(1, day / daysInMonth);
+
+  document.getElementById('dateModal').style.display = 'none';
+
+  var file = pendingFile;
+  pendingFile = null;
   currentFileName = file.name;
   storageKey = 'feedback_' + file.name.replace(/[^a-z0-9]/gi,'_').toLowerCase();
   loadFeedbackFromStorage();
-  currentFileName = file.name;
   showScreen('processing');
   log('Reading: ' + file.name);
+  log('Data date: ' + dataDate.toDateString() + ' (day ' + day + ' of ' + daysInMonth + ' = ' + Math.round(currMonthFraction*100) + '% of month)');
   var reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -761,10 +828,27 @@ function mean(arr){ return arr.length?arr.reduce(function(a,b){return a+b;},0)/a
 function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSales, monthsAvailable, isNewItem, currVal) {
   // Build the full sales series including CURR as the most recent month.
   // CURR sits at index 0 (most recent); effectiveSales is [m1,m2,...] newest-first.
-  // We prepend CURR when it is a valid number so it participates in both
-  // average demand and trend/slope calculations.
+  // We extrapolate CURR to a full-month equivalent based on how far through
+  // the month we are (currMonthFraction). E.g. if we're on day 15 of 30 and
+  // CURR=6, the extrapolated value is 6 / 0.5 = 12 units/month.
+  // If we're at end of month (fraction ~1), CURR is used as-is.
+  // Only include CURR if we're at least 25% through the month — too early
+  // and there's not enough data to extrapolate reliably.
   var hasCurr = (currVal !== null && currVal !== undefined && !isNaN(currVal));
-  var fullSales = hasCurr ? [currVal].concat(effectiveSales) : effectiveSales;
+  var adjustedCurr = currVal;
+  if (hasCurr && currMonthFraction > 0 && currMonthFraction < 0.95) {
+    // Extrapolate to full month but cap at 3x M1 to avoid wild extrapolations
+    // at the very start of the month
+    if (currMonthFraction >= 0.25) {
+      adjustedCurr = Math.round((currVal / currMonthFraction) * 100) / 100;
+      var m1Val = effectiveSales[0] || 0;
+      if (m1Val > 0) adjustedCurr = Math.min(adjustedCurr, m1Val * 3);
+    } else {
+      // Less than 25% through month — too early, exclude CURR from calculation
+      hasCurr = false;
+    }
+  }
+  var fullSales = hasCurr ? [adjustedCurr].concat(effectiveSales) : effectiveSales;
 
   // New item with insufficient history
   if (isNewItem && fullSales.length < 2) {
@@ -820,8 +904,12 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
     if (adjustedSales[ci] > 0 && adjustedSales[ci+1] > 0) { hasConsecutiveSales = true; break; }
   }
 
+  // Don't flag as trending up if CURR is lower than both M1 and M2.
+  // This catches peak-then-drop patterns where the most recent direction is downward.
+  var currIsDecline = fullSales.length >= 3 && fullSales[0] < fullSales[1] && fullSales[0] < fullSales[2];
+
   var isTrending=false, trendLabel=null, projDemand = hasConsecutiveSales ? cleanMean : 0;
-  if (hasConsecutiveSales && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && slope>=MIN_SLOPE_ABS && nonZeroMonths>=3) {
+  if (hasConsecutiveSales && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && slope>=MIN_SLOPE_ABS && nonZeroMonths>=3 && !currIsDecline) {
     isTrending  = true;
     projDemand  = cleanMean + slope*PROJECTION_PERIODS;
     var pct     = Math.round(((projDemand-cleanMean)/cleanMean)*100);
@@ -1009,7 +1097,8 @@ function buildDashboard(filename, uploadedBy, uploadedAt) {
     var fn = filename || currentFileName || '';
     var by = uploadedBy ? ' · ' + uploadedBy : '';
     var at = uploadedAt ? ' · ' + new Date(uploadedAt).toLocaleDateString() : '';
-    chip.textContent = fn + by + at;
+    var dd = dataDate ? ' · Data: ' + dataDate.toLocaleDateString('en-AU', {day:'numeric',month:'short'}) + ' (' + Math.round(currMonthFraction*100) + '% of month)' : '';
+    chip.textContent = fn + by + at + dd;
   }
 
   actionStatus=''; naStatus='';
