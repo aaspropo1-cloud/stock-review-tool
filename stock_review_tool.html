@@ -803,7 +803,11 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   var cleanSales  = removeOutliersIQR(adjustedSales);
   var cleanMean   = mean(cleanSales);
   var replaced    = replaceOutliersIQR(adjustedSales);
+  // Trim trailing zeros from the oldest end before slope calculation.
+  // Without this, months where the product had no sales (M4/M5 = 0) create
+  // a false upward slope making flat demand look like a growing trend.
   var oldestToNew = replaced.slice().reverse();
+  while (oldestToNew.length > 2 && oldestToNew[0] === 0) { oldestToNew.shift(); }
   var slope       = linearSlope(oldestToNew);
 
   // Require at least 3 months with non-zero sales before flagging as trending.
