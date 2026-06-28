@@ -189,18 +189,18 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
 
 /* ── SKU Tooltip ── */
 .sku-wrap { position: relative; display: inline-block; }
-.sku-wrap:hover .sku-tooltip { display: block; }
 .sku-tooltip {
-  display: none; position: absolute; z-index: 100;
-  bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  display: none; position: fixed; z-index: 9999;
   background: #1a1d27; border: 1px solid #2d3748; border-radius: 10px;
   padding: 12px 14px; min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   pointer-events: none;
 }
 .sku-tooltip::after {
-  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  border: 6px solid transparent; border-top-color: #2d3748;
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent;
 }
+.sku-tooltip.above::after { top: 100%; border-top-color: #2d3748; }
+.sku-tooltip.below::after { bottom: 100%; border-bottom-color: #2d3748; }
 .sku-tooltip .tt-title { font-size: 0.7rem; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
 .tt-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .tt-col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
@@ -887,13 +887,19 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   // non-zero CURR on an otherwise-zero series from creating a false upward trend.
   // Step 1: MAD removes extreme statistical outliers
   var cleanSales  = removeOutliersIQR(adjustedSales);
-  // Step 2: Use median of cleaned non-zero values as projected base.
-  // Median is more robust than mean for high-variance demand patterns
-  // where MAD alone doesn't catch all spikes (e.g. [2,48,20,15,43,4]).
-  // This ensures avg demand and projected are never identical unless
-  // demand is genuinely flat with no outliers.
-  var cleanNonZero = cleanSales.filter(function(v){ return v > 0; });
-  var cleanMean   = cleanNonZero.length > 0 ? medianOf(cleanNonZero) : mean(cleanSales);
+  // Step 2: Choose projected base based on how sparse the demand is.
+  // For sparse items (>=50% zero months): use mean of cleaned values (includes zeros)
+  // giving a conservative estimate that reflects patchy demand patterns.
+  // For consistent items (<50% zeros): use median of non-zero cleaned values
+  // which is robust to remaining high values without being dragged down by zeros.
+  var zeroRatio   = adjustedSales.filter(function(v){ return v === 0; }).length / adjustedSales.length;
+  var cleanMean;
+  if (zeroRatio >= 0.5) {
+    cleanMean = mean(cleanSales);
+  } else {
+    var cleanNonZero = cleanSales.filter(function(v){ return v > 0; });
+    cleanMean = cleanNonZero.length > 0 ? medianOf(cleanNonZero) : mean(cleanSales);
+  }
   var replaced    = replaceOutliersIQR(adjustedSales);
   // Trim trailing zeros from the oldest end before slope calculation.
   // Without this, months where the product had no sales (M4/M5 = 0) create
@@ -1267,7 +1273,19 @@ function updateOtherText(key) {
 // ═══════════════════════════════════════════
 // SKU TOOLTIP
 // ═══════════════════════════════════════════
-function skuTooltip(d) {
+// Single shared tooltip element for performance
+var _ttEl = null;
+function getTooltipEl() {
+  if (!_ttEl) {
+    _ttEl = document.createElement('div');
+    _ttEl.className = 'sku-tooltip';
+    document.body.appendChild(_ttEl);
+  }
+  return _ttEl;
+}
+
+function showSkuTooltip(el, d) {
+  var tt = getTooltipEl();
   var labels = ["CURR","M-1","M-2","M-3","M-4","M-5"];
   var clses  = ["tt-curr","tt-m1","tt-m2","tt-m3","tt-m4","tt-m5"];
   var vals   = [
@@ -1285,19 +1303,50 @@ function skuTooltip(d) {
     var isNum = typeof vals[i] === "number";
     var pct   = isNum ? Math.round((vals[i] / maxVal) * 36) : 2;
     var disp  = isNum ? vals[i] : "-";
-    bars += "<div class=" + '"' + "tt-col " + clses[i] + '"' + ">";
-    bars += "<div class=" + '"' + "tt-label" + '"' + ">" + labels[i] + "</div>";
-    bars += "<div class=" + '"' + "tt-bar-wrap" + '"' + "><div class=" + '"' + "tt-bar" + '"' + " style=" + '"' + "height:" + pct + "px" + '"' + "></div></div>";
-    bars += "<div class=" + '"' + "tt-val" + '"' + ">" + disp + "</div>";
-    bars += "</div>";
+    bars += '<div class="tt-col ' + clses[i] + '">';
+    bars += '<div class="tt-label">' + labels[i] + '</div>';
+    bars += '<div class="tt-bar-wrap"><div class="tt-bar" style="height:' + pct + 'px"></div></div>';
+    bars += '<div class="tt-val">' + disp + '</div>';
+    bars += '</div>';
   }
-  var html2  = "<div class=" + '"' + "sku-wrap" + '"' + ">";
-  html2 += "<span style=" + '"' + "font-family:monospace;font-size:0.74rem;color:#a0aec0;cursor:default" + '"' + ">" + d.sku + "</span>";
-  html2 += "<div class=" + '"' + "sku-tooltip" + '"' + ">";
-  html2 += "<div class=" + '"' + "tt-title" + '"' + ">Sales History: " + d.sku + "</div>";
-  html2 += "<div class=" + '"' + "tt-grid" + '"' + ">" + bars + "</div>";
-  html2 += "</div></div>";
-  return html2;
+  tt.innerHTML = '<div class="tt-title">Sales History: ' + d.sku + '</div><div class="tt-grid">' + bars + '</div>';
+  tt.style.display = 'block';
+
+  // Position: check if there's room above, otherwise show below
+  var rect = el.getBoundingClientRect();
+  var ttH  = tt.offsetHeight || 120;
+  var spaceAbove = rect.top;
+  var spaceBelow = window.innerHeight - rect.bottom;
+
+  if (spaceAbove > ttH + 20) {
+    // Show above
+    tt.classList.remove('below'); tt.classList.add('above');
+    tt.style.top  = (rect.top - ttH - 8 + window.scrollY) + 'px';
+  } else {
+    // Show below
+    tt.classList.remove('above'); tt.classList.add('below');
+    tt.style.top  = (rect.bottom + 8 + window.scrollY) + 'px';
+  }
+  var left = rect.left + rect.width/2 - 110;
+  left = Math.max(8, Math.min(left, window.innerWidth - 228));
+  tt.style.left = left + 'px';
+}
+
+function hideSkuTooltip() {
+  var tt = getTooltipEl();
+  tt.style.display = 'none';
+}
+
+function skuTooltip(d) {
+  var sku = String(d.sku || '');
+  // Store data as JSON in data attribute for hover handler
+  var safeData = JSON.stringify({
+    curr: d.curr, m1: d.m1, m2: d.m2, m3: d.m3, m4: d.m4, m5: d.m5, sku: sku
+  }).replace(/"/g, '&quot;');
+  return '<span class="sku-wrap" style="font-family:monospace;font-size:0.74rem;color:#a0aec0;cursor:default" ' +
+    'onmouseenter="showSkuTooltip(this,JSON.parse(this.dataset.d))" ' +
+    'onmouseleave="hideSkuTooltip()" ' +
+    'data-d="' + safeData + '">' + sku + '</span>';
 }
 
 
