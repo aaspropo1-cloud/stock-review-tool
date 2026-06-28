@@ -885,8 +885,15 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   // replaceOutliersIQR substitutes outliers with the inlier mean in-place so that
   // linearSlope() sees a time-ordered series without gaps — preventing a single
   // non-zero CURR on an otherwise-zero series from creating a false upward trend.
+  // Step 1: MAD removes extreme statistical outliers
   var cleanSales  = removeOutliersIQR(adjustedSales);
-  var cleanMean   = mean(cleanSales);
+  // Step 2: Use median of cleaned non-zero values as projected base.
+  // Median is more robust than mean for high-variance demand patterns
+  // where MAD alone doesn't catch all spikes (e.g. [2,48,20,15,43,4]).
+  // This ensures avg demand and projected are never identical unless
+  // demand is genuinely flat with no outliers.
+  var cleanNonZero = cleanSales.filter(function(v){ return v > 0; });
+  var cleanMean   = cleanNonZero.length > 0 ? medianOf(cleanNonZero) : mean(cleanSales);
   var replaced    = replaceOutliersIQR(adjustedSales);
   // Trim trailing zeros from the oldest end before slope calculation.
   // Without this, months where the product had no sales (M4/M5 = 0) create
