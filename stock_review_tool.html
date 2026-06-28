@@ -472,6 +472,7 @@ var TREND_REORDER_MONTHS = 3;
 var OVERSTOCK_MONTHS     = 5;
 var TREND_SLOPE_PCT      = 0.20;
 var PROJECTION_PERIODS   = 2;
+var MIN_SLOPE_ABS        = 0.5;  // minimum 0.5 units/month absolute growth to flag as trending
 var NEW_ITEM_MONTHS      = 5;
 
 var REASONS_CORRECT = [
@@ -820,7 +821,7 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
   }
 
   var isTrending=false, trendLabel=null, projDemand = hasConsecutiveSales ? cleanMean : 0;
-  if (hasConsecutiveSales && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && nonZeroMonths>=3) {
+  if (hasConsecutiveSales && cleanMean>0 && slope>cleanMean*TREND_SLOPE_PCT && slope>=MIN_SLOPE_ABS && nonZeroMonths>=3) {
     isTrending  = true;
     projDemand  = cleanMean + slope*PROJECTION_PERIODS;
     var pct     = Math.round(((projDemand-cleanMean)/cleanMean)*100);
