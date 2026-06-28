@@ -268,31 +268,12 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
   <div style="text-align:center">
     <div style="font-size:2rem;margin-bottom:10px">🔒</div>
     <h1>Stock Review Tool</h1>
-    <p style="margin-top:6px">Enter the password to continue</p>
+    <p style="margin-top:6px">Sign in to continue</p>
   </div>
   <div class="password-card">
     <div>
-      <label for="passwordInput">Password</label>
-      <input type="password" id="passwordInput" placeholder="Enter password…" onkeydown="if(event.key==='Enter') checkPassword()">
-    </div>
-    <div class="password-error" id="passwordError">Incorrect password. Please try again.</div>
-    <button class="btn-primary" onclick="checkPassword()">Continue</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     REVIEWER SELECT SCREEN
-══════════════════════════════════════════ -->
-<div class="reviewer-screen" id="reviewerScreen" style="display:none">
-  <div style="text-align:center">
-    <div style="font-size:2rem;margin-bottom:10px">📦</div>
-    <h1>Stock Review Tool</h1>
-    <p style="margin-top:6px">Please select your name to continue</p>
-  </div>
-  <div class="reviewer-card">
-    <div>
-      <label for="reviewerSelect">Your Name</label>
-      <select id="reviewerSelect" onchange="document.getElementById('continueBtn').disabled=!this.value">
+      <label for="loginNameSelect">Your Name</label>
+      <select id="loginNameSelect" class="ctrl" style="width:100%;padding:10px 14px;font-size:0.9rem">
         <option value="">— Select your name —</option>
         <option>Alyssa</option>
         <option>Chloe</option>
@@ -306,9 +287,17 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
         <option>Tan</option>
       </select>
     </div>
-    <button class="btn-primary" id="continueBtn" disabled onclick="setReviewer()">Continue</button>
+    <div>
+      <label for="passwordInput">Password</label>
+      <input type="password" id="passwordInput" placeholder="Enter your password…" onkeydown="if(event.key==='Enter') checkPassword()">
+    </div>
+    <div class="password-error" id="passwordError">Incorrect name or password. Please try again.</div>
+    <button class="btn-primary" onclick="checkPassword()">Sign In</button>
   </div>
 </div>
+
+<!-- Reviewer screen removed - login now handles name + password -->
+<div id="reviewerScreen" style="display:none"></div>
 
 <!-- ══════════════════════════════════════════
      UPLOAD SCREEN
@@ -375,6 +364,7 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
     <div class="tab action-tab active" onclick="switchTab('action',this)">🔴 Requires Action <span class="pill" id="actionPill">0</span></div>
     <div class="tab noaction-tab" onclick="switchTab('noaction',this)">✅ No Action Required <span class="pill" id="noactionPill">0</span></div>
     <div class="tab feedback-tab" onclick="switchTab('feedback',this)">💬 Feedback <span class="pill" id="feedbackPill">0</span></div>
+    <div class="tab" id="plconfigTab" onclick="switchTab('plconfig',this)" style="display:none">⚙ PL Config</div>
   </div>
 
   <!-- EMPTY STATE -->
@@ -498,6 +488,71 @@ td.mono { font-family: 'Courier New', monospace; font-size: 0.74rem; color: #a0a
   </div>
 </div>
 
+  <!-- PL CONFIG TAB (admins only) -->
+  <div class="tab-content" id="tab-plconfig">
+    <!-- Sub-tabs -->
+    <div style="display:flex;gap:0;background:#1a1d27;border-bottom:1px solid #2d3748;padding:0 24px">
+      <div class="tab active" id="subtab-pl" onclick="switchConfigSubTab('pl')" style="font-size:0.78rem">📋 PL Code Defaults</div>
+      <div class="tab" id="subtab-sku" onclick="switchConfigSubTab('sku')" style="font-size:0.78rem">🔧 SKU Overrides</div>
+    </div>
+
+    <!-- PL Code sub-tab -->
+    <div id="subcontent-pl" style="padding:20px 24px">
+      <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">⚙ PL Code Configuration</h2>
+      <p style="font-size:0.8rem;color:#718096;margin-bottom:16px">Set lead time and safety stock weeks per PL Code. Reorder threshold = lead time + safety stock. Default is 8 weeks total.</p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div class="ctrl-group search-wrap">
+          <div class="filter-label">Search PL Code</div>
+          <input type="text" class="ctrl" id="plconfigSearch" placeholder="Search PL Code…" oninput="renderPLConfig()">
+        </div>
+        <button class="btn-hdr export" onclick="savePLConfig()">💾 Save PL Config</button>
+        <span id="plconfigSaveStatus" style="font-size:0.72rem;color:#68d391"></span>
+      </div>
+      <div class="table-wrap" style="padding:0">
+        <table>
+          <thead><tr>
+            <th>PL Code</th>
+            <th>Lead Time (weeks)</th>
+            <th>Safety Stock (weeks)</th>
+            <th>Total Threshold</th>
+            <th>Months Cover Trigger</th>
+          </tr></thead>
+          <tbody id="plconfigBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SKU Override sub-tab -->
+    <div id="subcontent-sku" style="padding:20px 24px;display:none">
+      <h2 style="font-size:1rem;font-weight:700;color:#f7fafc;margin-bottom:4px">🔧 SKU Level Overrides</h2>
+      <p style="font-size:0.8rem;color:#718096;margin-bottom:16px">Override lead time and safety stock for specific SKUs — use this when there is a shortage or special situation. SKU settings take priority over PL Code settings.</p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div class="ctrl-group search-wrap">
+          <div class="filter-label">Search SKU</div>
+          <input type="text" class="ctrl" id="skuconfigSearch" placeholder="Search SKU…" oninput="renderSKUConfig()">
+        </div>
+        <button class="btn-hdr" onclick="addSKUOverride()" style="border-color:#667eea;color:#667eea">+ Add SKU Override</button>
+        <button class="btn-hdr export" onclick="saveSKUConfig()">💾 Save SKU Overrides</button>
+        <span id="skuconfigSaveStatus" style="font-size:0.72rem;color:#68d391"></span>
+      </div>
+      <div class="table-wrap" style="padding:0">
+        <table>
+          <thead><tr>
+            <th>SKU</th>
+            <th>Lead Time (weeks)</th>
+            <th>Safety Stock (weeks)</th>
+            <th>Total Threshold</th>
+            <th>Months Cover Trigger</th>
+            <th>Reason</th>
+            <th class="no-sort">Remove</th>
+          </tr></thead>
+          <tbody id="skuconfigBody"></tbody>
+        </table>
+        <div class="empty" id="skuconfigEmpty" style="display:none">No SKU overrides set. Click "+ Add SKU Override" to add one.</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -548,6 +603,10 @@ var naSort           = { col: 'warehouse', dir: 1 };
 
 // feedback: { storageKey: { reviewer, sku, warehouse, pl_code, thumb, reason, action, timestamp } }
 var feedbackMap      = {};
+var plConfig         = {}; // { pl_code: { lead_time_weeks, safety_stock_weeks } }
+var skuConfig        = {}; // { sku: { lead_time_weeks, safety_stock_weeks, reason } }
+var DEFAULT_LEAD_WEEKS   = 4;
+var DEFAULT_SAFETY_WEEKS = 4;
 var storageKey       = '';
 var dataDate         = null; // date selected by user when uploading
 var currMonthFraction = 1.0; // how far through the current month (0-1)
@@ -557,14 +616,31 @@ var ADMIN_USERS      = ['Chris', 'Nancy', 'Dominik'];
 // ═══════════════════════════════════════════
 // PASSWORD
 // ═══════════════════════════════════════════
-var APP_PASSWORD = 'CPReporting@01';
+var USER_PASSWORDS = {
+  'Alyssa':    'Alyssa@Cp24',
+  'Chloe':     'Chloe@Cp24',
+  'Chris':     'Chris@Cp24',
+  'Dominik':   'Dominik@Cp24',
+  'Elbert':    'Elbert@Cp24',
+  'Kornelius': 'Kornelius@Cp24',
+  'Mery':      'Mery@Cp24',
+  'Muliani':   'Muliani@Cp24',
+  'Nancy':     'Nancy@Cp24',
+  'Tan':       'Tan@Cp24'
+};
 
 function checkPassword() {
-  var val = document.getElementById('passwordInput').value;
-  if (val === APP_PASSWORD) {
+  var name = document.getElementById('loginNameSelect').value;
+  var pwd  = document.getElementById('passwordInput').value;
+  if (name && USER_PASSWORDS[name] && pwd === USER_PASSWORDS[name]) {
     document.getElementById('passwordScreen').style.display = 'none';
-    document.getElementById('reviewerScreen').style.display = 'flex';
     document.getElementById('passwordError').style.display  = 'none';
+    currentReviewer = name;
+    document.getElementById('reviewerBadgeName').textContent = name;
+    document.getElementById('headerReviewer').textContent = name;
+    showScreen('dashboard');
+    showDashboardState('loading');
+    loadStockDataFromSheets();
   } else {
     document.getElementById('passwordError').style.display = 'block';
     document.getElementById('passwordInput').value = '';
@@ -940,7 +1016,8 @@ function classifyItem(warehouse, plCode, sku, desc, soh, rawSales, effectiveSale
     // Cover always uses the outlier-adjusted demand so one spike month doesn't
     // make stock look artificially healthy (or one dip make it look critical).
     var demandForCover   = isTrending?projDemand:cleanMean;
-    var reorderThreshold = isTrending?TREND_REORDER_MONTHS:REORDER_MONTHS;
+    var plThreshold = getReorderThresholdMonths(plCode, sku);
+    var reorderThreshold = isTrending ? Math.max(TREND_REORDER_MONTHS, plThreshold) : plThreshold;
     monthsCover = demandForCover>0 ? soh/demandForCover : null;
     if (soh===0 && demandForCover>0)                                  { status='outofstock'; action='Out of Stock'; }
     else if (monthsCover!==null && monthsCover<reorderThreshold)       { status='reorder';    action='Low Stock - Reorder'; }
@@ -1644,6 +1721,7 @@ function switchTab(tab,el){
   el.classList.add('active');
   document.getElementById('tab-'+tab).classList.add('active');
   if(tab==='feedback') { if(usingSheets()) loadFeedbackFromSheets(); else renderFeedbackTab(); }
+  if(tab==='plconfig') { loadPLConfig(); }
 }
 
 function showScreen(screen){
@@ -1697,6 +1775,8 @@ function showDashboardState(state) {
   var admin = isAdmin();
   document.getElementById('uploadFileBtn').style.display    = (hasData && admin) ? '' : 'none';
   document.getElementById('clearFeedbackBtn').style.display = (hasData && admin) ? '' : 'none';
+  var plTab = document.getElementById('plconfigTab');
+  if (plTab) plTab.style.display = (hasData && admin) ? '' : 'none';
   document.getElementById('newFileBtn').style.display       = 'none';
   document.getElementById('dataSourceChip').style.display   = hasData ? '' : 'none';
 }
@@ -1808,6 +1888,213 @@ function saveStockDataToSheets(filename) {
     console.error('saveStockDataToSheets error:', err);
     setFeedbackStatus('error', err.message);
   });
+}
+
+// ═══════════════════════════════════════════
+// PL CONFIG
+// ═══════════════════════════════════════════
+function getReorderThresholdMonths(plCode, sku) {
+  // SKU level takes priority over PL Code level
+  var skuCfg = skuConfig[String(sku||'')];
+  var cfg     = skuCfg || plConfig[String(plCode||'')];
+  var totalWeeks = cfg
+    ? (Number(cfg.lead_time_weeks)||DEFAULT_LEAD_WEEKS) + (Number(cfg.safety_stock_weeks)||DEFAULT_SAFETY_WEEKS)
+    : (DEFAULT_LEAD_WEEKS + DEFAULT_SAFETY_WEEKS);
+  return Math.round((totalWeeks / 4.33) * 100) / 100;
+}
+
+function loadPLConfig() {
+  if (!usingSheets()) { renderPLConfig(); return; }
+  // Load both PL and SKU configs in parallel
+  Promise.all([
+    fetch(SCRIPT_URL + '?action=getPLConfig').then(function(r){ return r.text(); }),
+    fetch(SCRIPT_URL + '?action=getSKUConfig').then(function(r){ return r.text(); })
+  ]).then(function(results) {
+    try {
+      var plRes = JSON.parse(results[0]);
+      if (Array.isArray(plRes)) {
+        plConfig = {};
+        plRes.forEach(function(row){ plConfig[row.pl_code] = { lead_time_weeks: row.lead_time_weeks, safety_stock_weeks: row.safety_stock_weeks }; });
+      }
+    } catch(e) {}
+    try {
+      var skuRes = JSON.parse(results[1]);
+      if (Array.isArray(skuRes)) {
+        skuConfig = {};
+        skuRes.forEach(function(row){ skuConfig[row.sku] = { lead_time_weeks: row.lead_time_weeks, safety_stock_weeks: row.safety_stock_weeks, reason: row.reason||'' }; });
+      }
+    } catch(e) {}
+    renderPLConfig();
+  }).catch(function(){ renderPLConfig(); });
+}
+
+function savePLConfig() {
+  var rows = document.querySelectorAll('#plconfigBody tr');
+  rows.forEach(function(row) {
+    var pl = row.dataset.pl;
+    if (!pl) return;
+    var ltInput = row.querySelector('.pl-lt');
+    var ssInput = row.querySelector('.pl-ss');
+    if (ltInput && ssInput) {
+      plConfig[pl] = {
+        lead_time_weeks:    Math.max(0, parseInt(ltInput.value)||DEFAULT_LEAD_WEEKS),
+        safety_stock_weeks: Math.max(0, parseInt(ssInput.value)||DEFAULT_SAFETY_WEEKS)
+      };
+    }
+  });
+  var el = document.getElementById('plconfigSaveStatus');
+  if (usingSheets()) {
+    el.textContent = '⟳ Saving…'; el.style.color = '#f6ad55';
+    var payload = Object.keys(plConfig).map(function(pl){
+      return { pl_code: pl, lead_time_weeks: plConfig[pl].lead_time_weeks, safety_stock_weeks: plConfig[pl].safety_stock_weeks };
+    });
+    fetch(SCRIPT_URL + '?action=savePLConfig&d=' + encodeURIComponent(JSON.stringify(payload)))
+      .then(function(r){ return r.text(); })
+      .then(function(){
+        el.textContent = '✓ Saved'; el.style.color = '#68d391';
+        setTimeout(function(){ el.textContent = ''; }, 3000);
+        renderPLConfig();
+      })
+      .catch(function(){ el.textContent = '⚠ Error saving'; el.style.color = '#fc8181'; });
+  } else {
+    el.textContent = '✓ Saved locally'; el.style.color = '#68d391';
+    setTimeout(function(){ el.textContent = ''; }, 3000);
+    renderPLConfig();
+  }
+}
+
+function switchConfigSubTab(tab) {
+  document.getElementById('subcontent-pl').style.display  = tab==='pl'  ? '' : 'none';
+  document.getElementById('subcontent-sku').style.display = tab==='sku' ? '' : 'none';
+  document.getElementById('subtab-pl').classList.toggle('active',  tab==='pl');
+  document.getElementById('subtab-sku').classList.toggle('active', tab==='sku');
+  if (tab==='sku') renderSKUConfig();
+}
+
+function addSKUOverride() {
+  var sku = prompt('Enter SKU to override:');
+  if (!sku || !sku.trim()) return;
+  sku = sku.trim().toUpperCase();
+  if (skuConfig[sku]) { alert('SKU ' + sku + ' already has an override. Edit it in the table below.'); return; }
+  skuConfig[sku] = { lead_time_weeks: DEFAULT_LEAD_WEEKS, safety_stock_weeks: DEFAULT_SAFETY_WEEKS, reason: '' };
+  renderSKUConfig();
+}
+
+function removeSKUOverride(btn) {
+  var sku = btn.closest('tr').dataset.sku;
+  if (!confirm('Remove override for ' + sku + '?')) return;
+  delete skuConfig[sku];
+  renderSKUConfig();
+}
+
+function saveSKUConfig() {
+  // Collect all edited values
+  var rows = document.querySelectorAll('#skuconfigBody tr');
+  rows.forEach(function(row) {
+    var sku = row.dataset.sku;
+    if (!sku) return;
+    var lt  = row.querySelector('.sku-lt');
+    var ss  = row.querySelector('.sku-ss');
+    var rsn = row.querySelector('.sku-reason');
+    if (lt && ss) {
+      skuConfig[sku] = {
+        lead_time_weeks:    Math.max(0, parseInt(lt.value)||DEFAULT_LEAD_WEEKS),
+        safety_stock_weeks: Math.max(0, parseInt(ss.value)||DEFAULT_SAFETY_WEEKS),
+        reason: rsn ? rsn.value : ''
+      };
+    }
+  });
+  var el = document.getElementById('skuconfigSaveStatus');
+  if (usingSheets()) {
+    el.textContent = '⟳ Saving…'; el.style.color = '#f6ad55';
+    var payload = Object.keys(skuConfig).map(function(s){
+      return { sku: s, lead_time_weeks: skuConfig[s].lead_time_weeks, safety_stock_weeks: skuConfig[s].safety_stock_weeks, reason: skuConfig[s].reason||'' };
+    });
+    fetch(SCRIPT_URL + '?action=saveSKUConfig&d=' + encodeURIComponent(JSON.stringify(payload)))
+      .then(function(r){ return r.text(); })
+      .then(function(){
+        el.textContent = '✓ Saved'; el.style.color = '#68d391';
+        setTimeout(function(){ el.textContent = ''; }, 3000);
+        renderSKUConfig();
+      })
+      .catch(function(){ el.textContent = '⚠ Error'; el.style.color = '#fc8181'; });
+  } else {
+    el.textContent = '✓ Saved locally'; el.style.color = '#68d391';
+    setTimeout(function(){ el.textContent = ''; }, 3000);
+    renderSKUConfig();
+  }
+}
+
+function renderSKUConfig() {
+  var skus = Object.keys(skuConfig).sort();
+  var q = (document.getElementById('skuconfigSearch')||{value:''}).value.toLowerCase();
+  if (q) skus = skus.filter(function(s){ return s.toLowerCase().indexOf(q) >= 0; });
+  var tbody = document.getElementById('skuconfigBody');
+  var empty = document.getElementById('skuconfigEmpty');
+  if (!tbody) return;
+  if (!skus.length) { tbody.innerHTML = ''; if(empty) empty.style.display=''; return; }
+  if(empty) empty.style.display='none';
+  tbody.innerHTML = skus.map(function(sku) {
+    var cfg    = skuConfig[sku];
+    var lt     = Number(cfg.lead_time_weeks)    || DEFAULT_LEAD_WEEKS;
+    var ss     = Number(cfg.safety_stock_weeks) || DEFAULT_SAFETY_WEEKS;
+    var total  = lt + ss;
+    var months = Math.round((total / 4.33) * 100) / 100;
+    var reason = cfg.reason || '';
+    return '<tr data-sku="' + sku + '">' +
+      '<td class="mono" style="color:#f6e05e">' + sku + '</td>' +
+      '<td><input type="number" class="ctrl sku-lt" value="' + lt + '" min="0" max="52" style="width:80px" oninput="updateSKUPreview(this)"></td>' +
+      '<td><input type="number" class="ctrl sku-ss" value="' + ss + '" min="0" max="52" style="width:80px" oninput="updateSKUPreview(this)"></td>' +
+      '<td class="sku-total" style="color:#f6ad55;font-weight:700">' + total + ' weeks</td>' +
+      '<td class="sku-months" style="color:#667eea">' + months + ' mo</td>' +
+      '<td><input type="text" class="ctrl sku-reason" value="' + reason.replace(/"/g,'&quot;') + '" placeholder="e.g. Supplier shortage…" style="width:200px"></td>' +
+      '<td><button class="fb-clear-btn" onclick="removeSKUOverride(this)">Remove</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function updateSKUPreview(input) {
+  var row    = input.closest('tr');
+  var lt     = parseInt(row.querySelector('.sku-lt').value) || 0;
+  var ss     = parseInt(row.querySelector('.sku-ss').value) || 0;
+  var total  = lt + ss;
+  var months = Math.round((total / 4.33) * 100) / 100;
+  row.querySelector('.sku-total').textContent  = total + ' weeks';
+  row.querySelector('.sku-months').textContent = months + ' mo';
+}
+
+function renderPLConfig() {
+  var plCodes = [];
+  allItems.forEach(function(d){ if (d.pl_code && plCodes.indexOf(String(d.pl_code)) < 0) plCodes.push(String(d.pl_code)); });
+  plCodes.sort();
+  var q = (document.getElementById('plconfigSearch')||{value:''}).value.toLowerCase();
+  if (q) plCodes = plCodes.filter(function(p){ return p.toLowerCase().indexOf(q) >= 0; });
+  var tbody = document.getElementById('plconfigBody');
+  if (!tbody) return;
+  tbody.innerHTML = plCodes.map(function(pl) {
+    var cfg = plConfig[pl] || { lead_time_weeks: DEFAULT_LEAD_WEEKS, safety_stock_weeks: DEFAULT_SAFETY_WEEKS };
+    var lt  = Number(cfg.lead_time_weeks)    || DEFAULT_LEAD_WEEKS;
+    var ss  = Number(cfg.safety_stock_weeks) || DEFAULT_SAFETY_WEEKS;
+    var total  = lt + ss;
+    var months = Math.round((total / 4.33) * 100) / 100;
+    return '<tr data-pl="' + pl + '">' +
+      '<td class="mono">' + pl + '</td>' +
+      '<td><input type="number" class="ctrl pl-lt" value="' + lt + '" min="0" max="52" style="width:80px" oninput="updatePLPreview(this)"></td>' +
+      '<td><input type="number" class="ctrl pl-ss" value="' + ss + '" min="0" max="52" style="width:80px" oninput="updatePLPreview(this)"></td>' +
+      '<td class="pl-total" style="color:#f6ad55;font-weight:700">' + total + ' weeks</td>' +
+      '<td class="pl-months" style="color:#667eea">' + months + ' mo</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function updatePLPreview(input) {
+  var row   = input.closest('tr');
+  var lt    = parseInt(row.querySelector('.pl-lt').value) || 0;
+  var ss    = parseInt(row.querySelector('.pl-ss').value) || 0;
+  var total = lt + ss;
+  var months = Math.round((total / 4.33) * 100) / 100;
+  row.querySelector('.pl-total').textContent  = total + ' weeks';
+  row.querySelector('.pl-months').textContent = months + ' mo';
 }
 
 // Drag-and-drop on the empty-state upload box
